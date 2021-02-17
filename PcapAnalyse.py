@@ -12,6 +12,7 @@ from cryptography.x509.oid import NameOID
 import Parser
 from GetRootCAs import GetRootCAs
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 
 
@@ -27,6 +28,7 @@ class PcapAnalyzer(object):
         self.captured_packets = 0
         self.countries = []
         self.usedRootCAs = []
+        self.usedCipherSuites = []
         self.parser = None
 
     def run(self):
@@ -110,16 +112,15 @@ class PcapAnalyzer(object):
             if sub not in temp:
                 res.append((counter[sub],) + sub)
                 temp.add(sub)
-        print(res)
         value1, label = zip(*res)
         f = plt.figure(1)
         plt.pie(value1, labels=label, autopct='%1.0f%%')
 
         objects, value2 = zip(*used_root_cas)
-        y_pos = np.arange(len(objects))
         g = plt.figure(2)
-        plt.barh(value2, y_pos, align='center', alpha=0.5)
-        plt.yticks(y_pos, objects)
+        yvals = range(len(objects))
+        plt.barh(yvals, value2, align='center', alpha=0.4)
+        plt.yticks(yvals, objects)
         plt.title('Used Root Certificates Count')
 
         plt.show()

@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives import hashes
 import dpkt
 
 import RootCATree
+from Constants import Ciphersuites
 
 
 class Parser(object):
@@ -20,9 +21,6 @@ class Parser(object):
         self.count_cert_chains_added = 0
         self.count_handshake_messages = 0
         self.logger = logging.getLogger('pcap_analysis.parser')
-
-    def get_parser_data(self):
-        return self.root_ca_tree_list, self.count_handshake_messages, self.count_certificate_messages, self.count_cert_chains_added
 
     def analyze_packet(self, ts, pkt):
         """
@@ -97,6 +95,25 @@ class Parser(object):
                 self.encrypted_streams.append(connection)
             # sys.stdout.flush()
 
+    def unpacker(self, type_string, packet):
+        """
+        Returns network-order parsed data and the packet minus the parsed data.
+        """
+        if type_string.endswith('H'):
+            length = 2
+        if type_string.endswith('B'):
+            length = 1
+        if type_string.endswith('P'):  # 2 bytes for the length of the string
+            length, packet = self.unpacker('H', packet)
+            type_string = '{0}s'.format(length)
+        if type_string.endswith('p'):  # 1 byte for the length of the string
+            length, packet = self.unpacker('B', packet)
+            type_string = '{0}s'.format(length)
+        data = dpkt.struct.unpack('!' + type_string, packet[:length])[0]
+        if type_string.endswith('s'):
+            data = ''.join(data)
+        return data, packet[length:]
+
     def parse_tls_handshake(self, ip, data, record_length):
         """
         Parses TLS Handshake message contained in data according to their type.
@@ -138,6 +155,7 @@ class Parser(object):
                     self.logger.info('[+] ClientHello {0} -> {1}'.format(client, server))
                 if handshake.type == 2:
                     self.logger.info('[+] ServerHello {1} <- {0}'.format(client, server))
+                    self.parse_server_hello(handshake.data)
                 if handshake.type == 11:
                     self.logger.info('[+] Certificate {0} <- {1}'.format(client, server))
                     self.parse_server_certificate(handshake.data, client, server)
@@ -153,6 +171,17 @@ class Parser(object):
                     self.logger.info('[+] ClientKeyExchange {0} -> {1}'.format(client, server))
                 if handshake.type == 20:
                     self.logger.info('[+] Finished {0} -> {1}'.format(client, server))
+
+    def parse_server_hello(self, handshake):
+        """
+        Parses server hello handshake.
+        """
+        payload = handshake.data
+        session_id, payload = self.unpacker('p', payload)
+        cipher_suite, payload = self.unpacker('H', payload)
+        self.logger.debug('[*]   Cipher: {0}'.format(Ciphersuites.value(cipher_suite)))
+        #compression, payload = self.unpacker('B', payload)
+        #self.logger.debug('[*]   Compression: {0}'.format(pretty_name('compression_methods', compression)))
 
     def parse_server_certificate(self, tls_cert_msg, client, server):
         connection_key = "{}-{}".format(client, server)
