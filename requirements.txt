@@ -1,10 +1,11 @@
+dpkt
+netifaces
+wheel
 treelib
 cryptography
 bs4
 requests
 coloredlogs
-dpkt
-netifaces
 pcapy
 matplotlib
 numpy
