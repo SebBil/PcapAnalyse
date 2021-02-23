@@ -17,18 +17,14 @@ Der Parser ist für das Parsen und wiederherstellen der TCP Streams zuständig. 
 ### Tree and Cert Klassen
 Beim einlesen der Root Zertifikate wird aus jedem 
 
-### Requirements
-* treelib
-* cryptography
-* bs4
-* requests
-* coloredlogs
-* dpkt
-* netifaces
-* pcapy
+### Dependencies
+
+
+
+**PcapAnalysis only works with regular pcap files not with the wireshark pcapng files. For that it exists a converter that is builtin in wireshark**
+====================================================================================================================================================
 
 ### Usage
-**__PcapAnalysis only works with regular pcap files not with the wireshark pcapng files. For that it exists a converter that is builtin in wireshark__**
 Simple analysis of a pcap file
 ```bash
 python3 PcapAnalyse.py -f example.pcap
