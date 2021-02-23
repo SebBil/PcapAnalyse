@@ -25,6 +25,7 @@ class PcapAnalyzer(object):
         self.file = args.file
         self.list_interfaces = args.list_interfaces
         self.debug = args.debug
+        self.ca_folder = args.ca_folder
         self.captured_packets = 0
         self.countries = []
         self.usedRootCAs = []
@@ -38,8 +39,9 @@ class PcapAnalyzer(object):
         if self.debug:
             coloredlogs.install(level='DEBUG', logger=self.logger)
 
-        # Read certificates in
-        GetRootCAs.get_all_roots_from_folder(r'D:\Projects\PyCharm\PcapAnalyse\RootCAs', self.cert_mgr)
+        # Read certificates in, maybe give a root ca folder in params or load it from the website into the current working directory
+        sub = GetRootCAs(self.ca_folder)
+        sub.get_roots(self.cert_mgr)
 
         if self.interface:
             self.start_listening()
@@ -112,16 +114,18 @@ class PcapAnalyzer(object):
             if sub not in temp:
                 res.append((counter[sub],) + sub)
                 temp.add(sub)
-        value1, label = zip(*res)
-        f = plt.figure(1)
-        plt.pie(value1, labels=label, autopct='%1.0f%%')
+        if len(res) > 0:
+            value1, label = zip(*res)
+            f = plt.figure(1)
+            plt.pie(value1, labels=label, autopct='%1.0f%%')
 
-        objects, value2 = zip(*used_root_cas)
-        g = plt.figure(2)
-        yvals = range(len(objects))
-        plt.barh(yvals, value2, align='center', alpha=0.4)
-        plt.yticks(yvals, objects)
-        plt.title('Used Root Certificates Count')
+        if len(used_root_cas) > 0:
+            objects, value2 = zip(*used_root_cas)
+            g = plt.figure(2)
+            yvals = range(len(objects))
+            plt.barh(yvals, value2, align='center', alpha=0.4)
+            plt.yticks(yvals, objects)
+            plt.title('Used Root Certificates Count')
 
         plt.show()
 
@@ -153,6 +157,8 @@ def parse_arguments():
                         help='read from file (don\'t capture live packets)')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='increase output verbosity')
+    parser.add_argument('-c', '--ca_folder', action='store', metavar='DIRECTORY',
+                        help='the folder where the root CA certificates stored. Provide the full path!')
     return parser.parse_args()
 
 
