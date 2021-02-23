@@ -22,16 +22,18 @@ Beim einlesen der Root Zertifikate wird aus jedem
 * cryptography
 * bs4
 * requests
-* collections
 * coloredlogs
 * dpkt
 * netifaces
 * pcapy
 
 ### Usage
+**__PcapAnalysis only works with regular pcap files not with the wireshark pcapng files. For that it exists a converter that is builtin in wireshark__**
+Simple analysis of a pcap file
 ```bash
 python3 PcapAnalyse.py -f example.pcap
 ```
+List all possible interfaces for sniffing
 ```bash
 python3 PcapAnalyse.py --list-interfaces
 ```

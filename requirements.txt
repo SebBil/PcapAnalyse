@@ -2,7 +2,6 @@ treelib
 cryptography
 bs4
 requests
-collections
 coloredlogs
 dpkt
 netifaces
