@@ -7,3 +7,5 @@ coloredlogs
 dpkt
 netifaces
 pcapy
+matplotlib
+numpy
