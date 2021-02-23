@@ -18,7 +18,8 @@ Der Parser ist für das Parsen und wiederherstellen der TCP Streams zuständig. 
 Beim einlesen der Root Zertifikate wird aus jedem 
 
 ### Dependencies
-
+* pcapy (It depends on the platform { Windows: winpcap developer (wdpack); *nix: sudo apt-get install libpcap-dev } )
+* dpkt
 
 
 **PcapAnalysis only works with regular pcap files not with the wireshark pcapng files. For that it exists a converter that is builtin in wireshark**
