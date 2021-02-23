@@ -1,20 +1,23 @@
 import binascii
 import logging
 import socket
+import struct
+import sys
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 import dpkt
 
+import Constants
 import RootCATree
-from Constants import Ciphersuites
 
 
 class Parser(object):
-    def __init__(self, crt_m):
+    def __init__(self, crt_m, used_cs):
         self.tmp_tree = None
         self.root_ca_tree_list = crt_m
+        self.used_cipher_suites = used_cs
         self.streambuffer = {}
         self.encrypted_streams = []
         self.count_certificate_messages = 0
@@ -93,7 +96,7 @@ class Parser(object):
             if record.type == 20:
                 self.logger.info('[+] Change cipher - encrypted messages from now on for {0}'.format(connection))
                 self.encrypted_streams.append(connection)
-            # sys.stdout.flush()
+            sys.stdout.flush()
 
     def unpacker(self, type_string, packet):
         """
@@ -109,9 +112,9 @@ class Parser(object):
         if type_string.endswith('p'):  # 1 byte for the length of the string
             length, packet = self.unpacker('B', packet)
             type_string = '{0}s'.format(length)
-        data = dpkt.struct.unpack('!' + type_string, packet[:length])[0]
+        data = struct.unpack('!' + type_string, packet[:length])[0]
         if type_string.endswith('s'):
-            data = ''.join(data)
+            data = ''.join(data.hex())
         return data, packet[length:]
 
     def parse_tls_handshake(self, ip, data, record_length):
@@ -178,12 +181,16 @@ class Parser(object):
         """
         payload = handshake.data
         session_id, payload = self.unpacker('p', payload)
+        self.logger.debug('[*]   Session ID: {}'.format(session_id))
         cipher_suite, payload = self.unpacker('H', payload)
-        self.logger.debug('[*]   Cipher: {0}'.format(Ciphersuites.value(cipher_suite)))
-        #compression, payload = self.unpacker('B', payload)
-        #self.logger.debug('[*]   Compression: {0}'.format(pretty_name('compression_methods', compression)))
+        cipher_name = Constants.CIPHER_SUITES.get(cipher_suite)
+        self.logger.debug('[*]   Used Cipher: {} - {}'.format(hex(cipher_suite), cipher_name))
+        self.used_cipher_suites.append((cipher_name, ))
 
     def parse_server_certificate(self, tls_cert_msg, client, server):
+        """
+        Parses the certificate message
+        """
         connection_key = "{}-{}".format(client, server)
 
         assert isinstance(tls_cert_msg, dpkt.ssl.TLSCertificate)
@@ -201,7 +208,7 @@ class Parser(object):
                 pre = binascii.hexlify(cert.fingerprint(hashes.SHA256()))
             except Exception as e:
                 self.logger.warning("[-] Shit happens: Error: {}".format(e))
-                self.logger.warning("[-] Error occured on connection: {}".format(connection_key))
+                self.logger.warning("[-] Error occurred on connection: {}".format(connection_key))
                 self.logger.warning("[-] Skip this certificate chain...")
                 return
 

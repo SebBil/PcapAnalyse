@@ -1,6 +1,5 @@
 dpkt
 netifaces
-wheel
 treelib
 cryptography
 bs4

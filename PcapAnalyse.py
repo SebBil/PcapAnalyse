@@ -12,8 +12,6 @@ from cryptography.x509.oid import NameOID
 import Parser
 from GetRootCAs import GetRootCAs
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-import numpy as np
 
 
 class PcapAnalyzer(object):
@@ -27,8 +25,6 @@ class PcapAnalyzer(object):
         self.debug = args.debug
         self.ca_folder = args.ca_folder
         self.captured_packets = 0
-        self.countries = []
-        self.usedRootCAs = []
         self.usedCipherSuites = []
         self.parser = None
 
@@ -39,31 +35,34 @@ class PcapAnalyzer(object):
         if self.debug:
             coloredlogs.install(level='DEBUG', logger=self.logger)
 
-        # Read certificates in, maybe give a root ca folder in params or load it from the website into the current working directory
+        # Read certificates in, maybe give a root ca folder in params or load it from the website into the current
+        # working directory
         sub = GetRootCAs(self.ca_folder)
         sub.get_roots(self.cert_mgr)
+
+        # Instantiate a Parser
+        self.parser = Parser.Parser(self.cert_mgr, self.usedCipherSuites)
 
         if self.interface:
             self.start_listening()
 
         if self.file:
-            self.logger.info("Start reading file...")
             self.read_file()
 
     def list_interfaces(self):
-        """Prints out all available interfaces with IP adresses, when possible."""
+        """Prints out all available interfaces with IP addresses, when possible."""
         for dev in pcapy.findalldevs():
-            queryname = dev
+            query_name = dev
             if dev.startswith(r'\Device\NPF_'):
-                queryname = dev[12:]
+                query_name = dev[12:]
             try:
-                self.logger.info(dev + " - " + netifaces.ifaddresses(queryname)[netifaces.AF_INET][0]['addr'])
+                self.logger.info(dev + " - " + netifaces.ifaddresses(query_name)[netifaces.AF_INET][0]['addr'])
             except Exception as e:
-                self.logger.info("Error occured on listing available interfaces")
+                self.logger.info("Error occurred on listing available interfaces")
                 self.logger.debug(str(e))
 
     def read_file(self):
-        self.parser = Parser.Parser(self.cert_mgr)
+        self.logger.info("Start reading file '{}' ...".format(self.file))
         try:
             with open(self.file, 'rb') as f:
                 capture = dpkt.pcap.Reader(f)
@@ -72,15 +71,15 @@ class PcapAnalyzer(object):
                     self.captured_packets += 1
                     self.parser.analyze_packet(timestamp, packet)
         except IOError:
-            self.logger.warning('could not parse {0}'.format(filename))
+            self.logger.warning('could not parse {0}'.format(self.file))
 
     def start_listening(self):
         """
         Starts the listening process with an optional filter.
         """
+        self.logger.info("Start listening on interface '{}' ...".format(self.interface))
         cap = pcapy.open_live(self.interface, 65536, 1, 0)
 
-        self.parser = Parser.Parser(self.cert_mgr)
         try:
             # start sniffing packets
             while True:
@@ -92,7 +91,7 @@ class PcapAnalyzer(object):
                 except Exception as e:
                     self.logger.warning(str(e))
         except KeyboardInterrupt as key:
-            exit()
+            exit(1)
 
     def plot_statistics(self):
         countries = []
@@ -104,28 +103,47 @@ class PcapAnalyzer(object):
                                           _tree.get_node(_tree.root).frequency))
                     countries.append((_tree.get_node(_tree.root).data.subject.get_attributes_for_oid(
                         NameOID.COUNTRY_NAME)[0].value,))
-                except:
-                    pass
+                except Exception as e:
+                    self.logger.debug(str(e))
+
                 _tree.show()
-        res = []
+        res_countries = []
         temp = set()
         counter = Counter(countries)
         for sub in countries:
             if sub not in temp:
-                res.append((counter[sub],) + sub)
+                res_countries.append((counter[sub],) + sub)
                 temp.add(sub)
-        if len(res) > 0:
-            value1, label = zip(*res)
-            f = plt.figure(1)
-            plt.pie(value1, labels=label, autopct='%1.0f%%')
+
+        res_used_ciphers = []
+        temp.clear()
+        counter = Counter(self.usedCipherSuites)
+        for sub in self.usedCipherSuites:
+            if sub not in temp:
+                res_used_ciphers.append((counter[sub],) + sub)
+                temp.add(sub)
+
+        if len(res_countries) > 0:
+            fig1, ax1 = plt.subplots()
+            value1, label = zip(*res_countries)
+            ax1.set_title('Locations of the signing Root CAs')
+            ax1.pie(value1, labels=label, autopct='%1.0f%%')
 
         if len(used_root_cas) > 0:
+            fig2, ax2 = plt.subplots(figsize=(15, 5))
+            plt.subplots_adjust(left=0.45)
             objects, value2 = zip(*used_root_cas)
-            g = plt.figure(2)
-            yvals = range(len(objects))
-            plt.barh(yvals, value2, align='center', alpha=0.4)
-            plt.yticks(yvals, objects)
-            plt.title('Used Root Certificates Count')
+            y_val = range(len(objects))
+            ax2.barh(y_val, value2, align='center', alpha=0.4)
+            ax2.set_yticks(y_val)
+            ax2.set_yticklabels(objects)
+            ax2.set_title('Used Root Certificates Count')
+
+        if len(res_used_ciphers) > 0:
+            fig3, ax3 = plt.subplots(figsize=(10, 5))
+            value3, label = zip(*res_used_ciphers)
+            ax3.pie(value3, labels=label, autopct='%1.0f%%')
+            ax3.set_title('Used Cipher Suites')
 
         plt.show()
 
@@ -142,9 +160,6 @@ def parse_arguments():
     """
     Parses command line arguments.
     """
-    global filename
-    global cap_filter
-    global interface
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=textwrap.dedent(
