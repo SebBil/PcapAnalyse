@@ -1,8 +1,9 @@
 # PcapAnalyse
 PcapAnalyse ist ein python projekt das sich auf das Parsen von TLS Netzwerktraffik bezieht und daraus eine Anzahl von verschiedenen Statistiken erstellt um zu ermitteln welche Root Zertifizierungsstellen auf dem einem System verwendet werden. Die Auswertungen sollen darüber auskunft geben, ob und welche der ca 400 Root CA's in dem Zertifikatsspeicher zu "verbieten".
 
+PcapAnalysis only works with regular pcap files not with the wireshark pcapng files. For that it exists a converter that is builtin in wireshark
+
 > Echtzeitbasierte Netzwerkdatenanalyse zur Ermittlung verwendeter Root Zertifikate
-> PcapAnalysis only works with regular pcap files not with the wireshark pcapng files. For that it exists a converter that is builtin in wireshark
 
 ### Anforderungsanalyse
 1. Die Zertifikate der Root Zertifizierungstellen sollen in das Programm eingelesen werden.
