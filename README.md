@@ -2,6 +2,7 @@
 PcapAnalyse ist ein python projekt das sich auf das Parsen von TLS Netzwerktraffik bezieht und daraus eine Anzahl von verschiedenen Statistiken erstellt um zu ermitteln welche Root Zertifizierungsstellen auf dem einem System verwendet werden. Die Auswertungen sollen darüber auskunft geben, ob und welche der ca 400 Root CA's in dem Zertifikatsspeicher zu "verbieten".
 
 > Echtzeitbasierte Netzwerkdatenanalyse zur Ermittlung verwendeter Root Zertifikate
+> PcapAnalysis only works with regular pcap files not with the wireshark pcapng files. For that it exists a converter that is builtin in wireshark
 
 ### Anforderungsanalyse
 1. Die Zertifikate der Root Zertifizierungstellen sollen in das Programm eingelesen werden.
@@ -11,35 +12,22 @@ PcapAnalyse ist ein python projekt das sich auf das Parsen von TLS Netzwerktraff
 
 Diese Anforderungen sollen in einem Python Program umgesetzt werden. Dazu dienen folgende Bibliotheken als Hilfe und der implementierte Code in angelehnt and PeterMosman's TLS protocol analyzer. Aufbau und Struktur des PcapAnalyzers:
 
-PcapAnalyse.py
-Parser.py
-GetRootCAs.py
-RootCATree.py
-Constants.py
+* PcapAnalyse.py: Hauptprogramm das unter anderem die Statistiken plottet
+* Parser.py: Der Parser ist für das Parsen und wiederherstellen der TCP Streams zuständig. Er übernimmt das Extrahieren des kompletten TLS Handshakes und gibt diese auf der Konsole aus wenn eines der Pakete übereinstimmt. Dazu kommt das dieser das extrahieren der Zertifikatskette übernimmt und diese an eine definierte Datenstruktur überträgt.
+* GetRootCAs.py: Klasse für das herunterladen der Root CA Zertifikate und um diese in das Programm zu laden. 
+* RootCATree.py: Abgeleitet von der treelib.Tree Klasse. Notwendig für das "anhängen" der Zertifikatsketten.
+* CertNode.py: Abgeleitet von der treelib.Node Klasse um weitere für diese Entwicklung benötigte Eigenschaften hinzuzufügen.
+* Constants.py: Die Constants Klasse beinhaltet die gängigen Cipher Suites und deren hexadezimalen Wert, sodas diese bei verarbeitung der Packets gemappt werden können.
 
+Eine detailierte Auflistung der Funktionen und Eigenschaften der Klassen finden Sie im Anhang (UML/classes.png). 
 
+__Methode:__
 
-_Methode:_
-
-
-
-_Ergebnisse:_
-
-
-
-### Parser
-Der Parser ist für das Parsen und wiederherstellen der TCP Streams zuständig. Er übernimmt das Extrahieren des kompletten TLS Handshakes und gibt diese auf der Konsole aus wenn eines der Pakete übereinstimmt. Dazu kommt das dieser das extrahieren der Zertifikatskette übernimmt und diese an eine definierte Datenstruktur überträgt.
-
-### Tree and Cert Klassen
-Beim einlesen der Root Zertifikate wird aus jedem 
+__Ergebnisse:__
 
 ### Dependencies
 * pcapy (It depends on the platform { Windows: winpcap developer (wdpack); *nix: sudo apt-get install libpcap-dev } )
 * dpkt
-
-
-**PcapAnalysis only works with regular pcap files not with the wireshark pcapng files. For that it exists a converter that is builtin in wireshark**
-====================================================================================================================================================
 
 ### Usage
 Simple analysis of a pcap file
