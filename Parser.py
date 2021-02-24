@@ -9,6 +9,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 import dpkt
 
+import CertNode
 import Constants
 import RootCATree
 
@@ -194,7 +195,7 @@ class Parser(object):
 
         assert isinstance(tls_cert_msg, dpkt.ssl.TLSCertificate)
         self.count_certificate_messages += 1
-        _tree = RootCATree.RootCATree(node_class=RootCATree.CertNode)
+        _tree = RootCATree.RootCATree(node_class=CertNode.CertNode)
         pre = None
         for crt in reversed(tls_cert_msg.certificates):
             try:

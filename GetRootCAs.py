@@ -11,6 +11,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 
 import RootCATree
+import CertNode
 
 logger = logging.getLogger()
 
@@ -88,7 +89,7 @@ class GetRootCAs(object):
                 try:
                     crt = open(file_path).read()
                     cert = x509.load_pem_x509_certificate(crt.encode(), default_backend())
-                    _tree = RootCATree.RootCATree(node_class=RootCATree.CertNode)
+                    _tree = RootCATree.RootCATree(node_class=CertNode.CertNode)
                     _tree.create_node(tag=cert.subject.rfc4514_string(),
                                       identifier=binascii.hexlify(cert.fingerprint(hashes.SHA256())),
                                       data=cert)

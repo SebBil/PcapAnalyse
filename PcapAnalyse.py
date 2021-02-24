@@ -155,6 +155,7 @@ class PcapAnalyzer(object):
             ax2.set_yticks(y_val)
             ax2.set_yticklabels(objects)
             ax2.set_title('Used Root Certificates Count')
+            ax2.set_xlabel('Count Root CA certificate used')
 
         if len(res_used_ciphers) > 0:
             fig3, ax3 = plt.subplots(figsize=(10, 5))

@@ -1,5 +1,5 @@
 import logging
-from treelib import Tree, Node, exceptions
+from treelib import Tree, exceptions
 from cryptography import x509
 
 
@@ -51,8 +51,3 @@ class RootCATree(Tree):
         pass
 
 
-class CertNode(Node):
-    def __init__(self, tag, identifier, data):
-        super().__init__(tag=tag, identifier=identifier, data=data)
-        self.frequency = 0
-        self.first_seen = None
