@@ -99,12 +99,29 @@ class PcapAnalyzer(object):
         for _tree in self.cert_mgr:
             if len(_tree.all_nodes()) > 1:
                 try:
-                    used_root_cas.append((_tree.get_node(_tree.root).data.subject.rfc4514_string(),
-                                          _tree.get_node(_tree.root).frequency))
-                    countries.append((_tree.get_node(_tree.root).data.subject.get_attributes_for_oid(
-                        NameOID.COUNTRY_NAME)[0].value,))
+                    subj = _tree.get_node(_tree.root).data.subject
+                    cn = None
+                    ou = None
+                    for attr in subj:
+                        oid_obj = attr.oid
+                        if oid_obj.dotted_string == "2.5.4.3":      # CommonName
+                            cn = attr.value
+                        if oid_obj.dotted_string == "2.5.4.11":     # OrganizationalUnitName
+                            ou = attr.value
+
+                    if cn is not None:
+                        used_root_cas.append((cn, _tree.get_node(_tree.root).frequency))
+                    elif ou is not None:
+                        used_root_cas.append((ou, _tree.get_node(_tree.root).frequency))
+                    else:
+                        countries.append((_tree.get_node(_tree.root).data.subject.rfc4514_string(), _tree.get_node(_tree.root).frequency))
+                    try:
+                        countries.append((_tree.get_node(_tree.root).data.subject.get_attributes_for_oid(
+                            NameOID.COUNTRY_NAME)[0].value,))
+                    except Exception as ex:
+                        self.logger.warning("Subject has no country listed. Error: {}".format(str(ex)))
                 except Exception as e:
-                    self.logger.debug(str(e))
+                    self.logger.warning(str(e))
 
                 _tree.show()
         res_countries = []
@@ -131,7 +148,7 @@ class PcapAnalyzer(object):
 
         if len(used_root_cas) > 0:
             fig2, ax2 = plt.subplots(figsize=(15, 5))
-            plt.subplots_adjust(left=0.45)
+            plt.subplots_adjust(left=0.2)
             objects, value2 = zip(*used_root_cas)
             y_val = range(len(objects))
             ax2.barh(y_val, value2, align='center', alpha=0.4)
