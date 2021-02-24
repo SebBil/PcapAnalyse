@@ -15,7 +15,6 @@ import RootCATree
 
 class Parser(object):
     def __init__(self, crt_m, used_cs):
-        self.tmp_tree = None
         self.root_ca_tree_list = crt_m
         self.used_cipher_suites = used_cs
         self.streambuffer = {}
