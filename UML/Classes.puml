@@ -1,0 +1,70 @@
+@startuml
+class RootCATree {
+    + logger : Logger
+
+    + create_node(tag=None, identifier=None, parent=None, data=None)
+    + search_add_nodes(nodes)
+    + plot_tree()
+}
+
+class CertNode {
+    + frequency : Int
+    + first_seen : Date
+}
+
+class GetRootCAs {
+    + logger : Logger
+    + root_ca_folder : String
+    + root_ca_download_url : String
+
+    + get_roots(cert_mgr)
+    - _get_all_roots_from_web()
+    - _load_root_cas(path, cert_mgr)
+}
+
+
+class Parser {
+    + root_ca_tree_list : List
+    + used_cipher_suites : List
+    + streambuffer : Dict
+    + encrypted_streams : List
+    + count_certificate_messages : Int
+    + count_cert_chains_added : Int
+    + count_handshake_messages : Int
+    + logger : Logger
+
+    + analyze_packet(ts, pkt)
+    + parse_ip_packet(ip)
+    + parse_tcp_packet(ip)
+    + add_to_buffer(ip, partial_stream)
+    + parse_tls_records(ip, stream)
+    + unpacker(type_string, packet)
+    + parse_tls_handshake(ip, data, record_length)
+    + parse_server_hello(handshake)
+    + parse_server_certificate(tls_cert_msg, client, server)
+}
+
+class PcapAnalyzer {
+    + logger : Logger
+    + cert_mgr : Dict
+    + interface : String
+    + file : String
+    + list_interfaces : Bool
+    + debug : Bool
+    + ca_folder : String
+    + captured_packets : Int
+    + usedCipherSuites : List
+    + parser : Parser
+
+    + run()
+    + list_interfaces()
+    + read_file()
+    + start_listening()
+    + plot_statistics()
+    + print_statistics()
+}
+
+treelib.Tree <|-- RootCATree
+treelib.Node <|-- CertNode
+
+@enduml
