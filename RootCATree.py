@@ -50,29 +50,6 @@ class RootCATree(Tree):
     def plot_tree(self):
         pass
 
-    def append_new_tree(self, _tree):
-        parent = None
-        for cur_node in _tree.all_nodes():
-            if self.exist_in(cur_node):
-                parent = cur_node
-                continue
-            else:
-                nid = cur_node.identifier
-
-                sub = _tree.subtree(nid)
-                self.paste(parent.identifier, sub)
-
-        self.show()
-        _tree.show()
-
-    def exist_in(self, node):
-        for n in self.all_nodes():
-            if n.identifier != node.identifier:
-                return False
-            if n.tag != node.tag:
-                return False
-        return True
-
 
 class CertNode(Node):
     def __init__(self, tag, identifier, data):
