@@ -2,6 +2,7 @@ import binascii
 import logging
 import os
 from urllib.parse import urlparse, parse_qs
+import datetime
 
 import requests
 from bs4 import BeautifulSoup
@@ -92,10 +93,27 @@ class GetRootCAs(object):
                                       identifier=binascii.hexlify(cert.fingerprint(hashes.SHA256())),
                                       data=cert)
 
-                    cert_mgr.append(_tree)
-                    count += 1
-                    self.logger.info("Successfully load %d of %d Certificates" % (count, len(files)))
+                    # append only if the cert is valid and not disabled
+                    in_time = self.time_in_range(cert.not_valid_before, cert.not_valid_after, datetime.datetime.now())
+
+                    if in_time:
+                        cert_mgr.append(_tree)
+                        count += 1
+                        self.logger.info("Successfully load %d of %d Certificates" % (count, len(files)))
+                    else:
+                        self.logger.info("Certificate '{}' is no valid anymore".format(cert.fingerprint(hashes.SHA256())))
+                        self.logger.debug("Not valid before: {}".format(cert.not_valid_before))
+                        self.logger.debug("Current GMT Time: {}".format(
+                            datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
+                        self.logger.debug("Not valid after:  {}".format(cert.not_valid_after))
                 except Exception as e:
                     self.logger.warning(str(e))
 
         self.logger.info("***************** Finished. Read all Root CA's from {} *****************".format(path))
+
+    def time_in_range(self, start, end, x):
+        """ Return true if x is in the range [start, end]"""
+        if start <= end:
+            return start <= x <= end
+        else:
+            return start <= x or x <= end
