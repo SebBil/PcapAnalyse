@@ -1,22 +1,26 @@
 import argparse
+import binascii
 import logging
 import textwrap
 from collections import Counter
+from datetime import datetime
 
 import coloredlogs
 import dpkt
 import netifaces
 import pcapy
+from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import NameOID
 
 import Parser
 from GetRootCAs import GetRootCAs
 import matplotlib.pyplot as plt
+import matplotlib.dates as md
 
 
 class PcapAnalyzer(object):
     def __init__(self, args):
-        self.logger = logging.getLogger('pcap_analysis')
+        self.logger = logging.getLogger("pcap_analysis")
         coloredlogs.install(level='INFO', logger=self.logger)
         self.cert_mgr = []
         self.interface = args.interface
@@ -29,8 +33,12 @@ class PcapAnalyzer(object):
         self.parser = None
 
     def run(self):
+        """
+        Run Method of the Pcap Analyser, method decides with mode is running.
+        Live capturing or pcap read file.
+        """
         if self.list_interfaces:
-            self.list_interfaces()
+            self.list_possible_interfaces()
             exit()
         if self.debug:
             coloredlogs.install(level='DEBUG', logger=self.logger)
@@ -49,7 +57,7 @@ class PcapAnalyzer(object):
         if self.file:
             self.read_file()
 
-    def list_interfaces(self):
+    def list_possible_interfaces(self):
         """Prints out all available interfaces with IP addresses, when possible."""
         for dev in pcapy.findalldevs():
             query_name = dev
@@ -75,7 +83,7 @@ class PcapAnalyzer(object):
 
     def start_listening(self):
         """
-        Starts the listening process with an optional filter.
+        Starts the listening process
         """
         self.logger.info("Start listening on interface '{}' ...".format(self.interface))
         cap = pcapy.open_live(self.interface, 65536, 1, 0)
@@ -83,19 +91,22 @@ class PcapAnalyzer(object):
         try:
             # start sniffing packets
             while True:
-                (header, packet) = cap.next()
+                (timestamp, packet) = cap.next()
                 try:
-                    # logger.info('%s: captured %d bytes' % (datetime.now(), header.getlen()))
+                    # self.logger.info('%s: captured %d bytes' % (datetime.now(), header))
                     self.captured_packets += 1
-                    self.parser.analyze_packet(header, packet)
+                    self.parser.analyze_packet(timestamp, packet)
                 except Exception as e:
                     self.logger.warning(str(e))
         except KeyboardInterrupt as key:
-            exit(1)
+            self.logger.info("Stopping live capturing and prepare statistics...")
+            pass
+            # exit(1)
 
     def plot_statistics(self):
         countries = []
         used_root_cas = []
+        cumulative_time_ca = []
         for _tree in self.cert_mgr:
             if len(_tree.all_nodes()) > 1:
                 try:
@@ -119,11 +130,13 @@ class PcapAnalyzer(object):
                         countries.append((_tree.get_node(_tree.root).data.subject.get_attributes_for_oid(
                             NameOID.COUNTRY_NAME)[0].value,))
                     except Exception as ex:
-                        self.logger.warning("Subject has no country listed. Error: {}".format(str(ex)))
+                        self.logger.debug("Subject has no country listed.".format(str(ex)))
+
+                    cumulative_time_ca.append(_tree.get_node(_tree.root).first_seen)
                 except Exception as e:
                     self.logger.warning(str(e))
 
-                _tree.show()
+                # _tree.show()
         res_countries = []
         temp = set()
         counter = Counter(countries)
@@ -148,7 +161,7 @@ class PcapAnalyzer(object):
 
         if len(used_root_cas) > 0:
             fig2, ax2 = plt.subplots(figsize=(15, 5))
-            plt.subplots_adjust(left=0.2)
+            plt.subplots_adjust(left=0.3)
             objects, value2 = zip(*used_root_cas)
             y_val = range(len(objects))
             ax2.barh(y_val, value2, align='center', alpha=0.4)
@@ -163,15 +176,33 @@ class PcapAnalyzer(object):
             ax3.pie(value3, labels=label, autopct='%1.0f%%')
             ax3.set_title('Used Cipher Suites')
 
+        if len(cumulative_time_ca) > 0:
+            fig4, ax4 = plt.subplots()
+            # fig4.autofmt_xdate(rotation=25)
+            cumulative_time_ca = sorted(cumulative_time_ca)
+            cumu_value = range(0, len(cumulative_time_ca), 1)
+            dates = [datetime.fromtimestamp(ts) for ts in cumulative_time_ca]
+            ax4.plot(dates, cumu_value, 'o-')
+            plt.subplots_adjust(bottom=0.25)
+            plt.xticks(rotation=25)
+            xfmt = md.DateFormatter('%Y-%m-%d %H:%M:%S')
+            ax4.xaxis.set_major_formatter(xfmt)
+            ax4.set_xlabel('Time')
+            ax4.set_ylabel('cumulative count CA certs')
+
         plt.show()
 
     def print_statistics(self):
-        print("*" * 50 + " Statistics " + "*" * 50)
-        print("Captured Packets:            %d" % self.captured_packets)
-        print("Count Handshake Messages     %d" % self.parser.count_handshake_messages)
-        print("Count Certificate Messages:  %d" % self.parser.count_certificate_messages)
-        print("Count Cert match Cert        %d" % self.parser.count_cert_chains_added)
-        print("*" * 50 + " Statistics " + "*" * 50)
+        self.logger.info("*" * 50 + " Statistics " + "*" * 50)
+        self.logger.info("Captured Packets:            %d" % self.captured_packets)
+        self.logger.info("Count Handshake Messages     %d" % self.parser.count_handshake_messages)
+        self.logger.info("Count Certificate Messages:  %d" % self.parser.count_certificate_messages)
+        self.logger.info("Count Cert match Cert        %d" % self.parser.count_cert_chains_added)
+        self.logger.info("Count No Cert found          %d" % self.parser.count_no_certificate_found)
+        self.logger.info("*" * 50 + " Statistics " + "*" * 50)
+        for chain in self.parser.chains_with_no_root:
+            self.logger.info("Thumbprint of the chain root cert: {}".format(binascii.hexlify(chain.get_node(chain.root).data.fingerprint(hashes.SHA256()))))
+            chain.show()
 
 
 def parse_arguments():

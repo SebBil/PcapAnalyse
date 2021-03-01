@@ -8,6 +8,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 import dpkt
+from treelib import exceptions
 
 import CertNode
 import Constants
@@ -16,14 +17,16 @@ import RootCATree
 
 class Parser(object):
     def __init__(self, crt_m, used_cs):
+        self.logger = logging.getLogger("pcap_analysis.parser")
         self.root_ca_tree_list = crt_m
         self.used_cipher_suites = used_cs
         self.streambuffer = {}
         self.encrypted_streams = []
+        self.count_no_certificate_found = 0
+        self.chains_with_no_root = []
         self.count_certificate_messages = 0
         self.count_cert_chains_added = 0
         self.count_handshake_messages = 0
-        self.logger = logging.getLogger('pcap_analysis.parser')
 
     def analyze_packet(self, ts, pkt):
         """
@@ -31,16 +34,16 @@ class Parser(object):
         """
         eth = dpkt.ethernet.Ethernet(pkt)
         if isinstance(eth.data, dpkt.ip.IP):
-            self.parse_ip_packet(eth.data)
+            self.parse_ip_packet(eth.data, ts)
 
-    def parse_ip_packet(self, ip):
+    def parse_ip_packet(self, ip, ts):
         """
         Parses IP packet.
         """
         if isinstance(ip.data, dpkt.tcp.TCP) and len(ip.data.data):
-            self.parse_tcp_packet(ip)
+            self.parse_tcp_packet(ip, ts)
 
-    def parse_tcp_packet(self, ip):
+    def parse_tcp_packet(self, ip, ts):
         """
         Parses TCP packet.
         """
@@ -59,7 +62,7 @@ class Parser(object):
                 if ip.data.data[0] == 23 and connection in self.encrypted_streams:
                     self.logger.debug('[+] Encrypted data between {0}'.format(connection))
                 return
-        self.parse_tls_records(ip, stream)
+        self.parse_tls_records(ip, stream, ts)
 
     def add_to_buffer(self, ip, partial_stream):
         """
@@ -73,7 +76,7 @@ class Parser(object):
         self.logger.debug(
             '[*] Added {0} bytes (seq {1}) to streambuffer for {2}'.format(len(partial_stream), ip.data.seq, connection))
 
-    def parse_tls_records(self, ip, stream):
+    def parse_tls_records(self, ip, stream, ts):
         """
         Parses TLS Records.
         """
@@ -90,7 +93,7 @@ class Parser(object):
         for record in records:
             self.logger.debug('[*] Captured TLS record type {0}'.format(record.type))
             if record.type == 22:
-                self.parse_tls_handshake(ip, record.data, record.length)
+                self.parse_tls_handshake(ip, record.data, record.length, ts)
             if record.type == 21:
                 self.logger.info('[+] TLS Alert message in connection: {0}'.format(connection))
             if record.type == 20:
@@ -117,7 +120,7 @@ class Parser(object):
             data = ''.join(data.hex())
         return data, packet[length:]
 
-    def parse_tls_handshake(self, ip, data, record_length):
+    def parse_tls_handshake(self, ip, data, record_length, ts):
         """
         Parses TLS Handshake message contained in data according to their type.
         """
@@ -161,7 +164,7 @@ class Parser(object):
                     self.parse_server_hello(handshake.data)
                 if handshake.type == 11:
                     self.logger.info('[+] Certificate {0} <- {1}'.format(client, server))
-                    self.parse_server_certificate(handshake.data, client, server)
+                    self.parse_server_certificate(handshake.data, client, server, ts)
                 if handshake.type == 12:
                     self.logger.info('[+] ServerKeyExchange {1} <- {0}'.format(server, client))
                 if handshake.type == 13:
@@ -187,7 +190,7 @@ class Parser(object):
         self.logger.debug('[*]   Used Cipher: {} - {}'.format(hex(cipher_suite), cipher_name))
         self.used_cipher_suites.append((cipher_name, ))
 
-    def parse_server_certificate(self, tls_cert_msg, client, server):
+    def parse_server_certificate(self, tls_cert_msg, client, server, ts):
         """
         Parses the certificate message
         """
@@ -200,24 +203,33 @@ class Parser(object):
         for crt in reversed(tls_cert_msg.certificates):
             try:
                 cert = x509.load_der_x509_certificate(crt, default_backend())
-
+            except Exception as e:
+                self.logger.warning("[-] Paring certificate failed.")
+                self.logger.warning("[-] Error: {}".format(e))
+                self.logger.warning("[-] Error occurred on connection: {}".format(connection_key))
+                self.logger.warning("[-] Skip this certificate chain...")
+                return
+            try:
                 _tree.create_node(tag=cert.subject.rfc4514_string(),
                                   identifier=binascii.hexlify(cert.fingerprint(hashes.SHA256())),
                                   data=cert,
                                   parent=pre)
                 pre = binascii.hexlify(cert.fingerprint(hashes.SHA256()))
-            except Exception as e:
-                self.logger.warning("[-] Shit happens: Error: {}".format(e))
+            except exceptions.DuplicatedNodeIdError as duplicate:
+                self.logger.debug("[*] Node already exists: {}".format(cert.fingerprint(hashes.SHA256())))
+                pass
+            except Exception as ex:
+                self.logger.warning("[-] Adding cert node to tree failed.")
+                self.logger.warning("[-] Error: {}".format(ex))
                 self.logger.warning("[-] Error occurred on connection: {}".format(connection_key))
                 self.logger.warning("[-] Skip this certificate chain...")
                 return
 
-        # _tree.show()
         nodes = _tree.all_nodes()
         found = False
         for num, ca_tree in enumerate(self.root_ca_tree_list):
             self.logger.debug("[+] Try find subtree in {} of {}".format(num + 1, len(self.root_ca_tree_list)))
-            found = ca_tree.search_add_nodes(nodes)
+            found = ca_tree.search_nodes(nodes, ts)
             if found:
                 # self.logger.info("Found tree and successfully added certificate chain")
                 self.count_cert_chains_added += 1
@@ -225,4 +237,7 @@ class Parser(object):
 
         if not found:
             self.logger.warning("[!] No Root certificate found")
-            _tree.show()
+            # self.logger.warning("[!] Thumbprint of root chain: {}".format(binascii.hexlify(_tree.get_node(_tree.root).data.fingerprint(hashes.SHA256()))))
+            self.count_no_certificate_found += 1
+            self.chains_with_no_root.append(_tree)
+            # _tree.show()

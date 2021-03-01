@@ -39,3 +39,7 @@ List all possible interfaces for sniffing
 ```bash
 python3 PcapAnalyse.py --list-interfaces
 ```
+
+### TODO
+* Logging the debug log in a file for a better overview in the stdout
+* first seen of the certificates and the plot belongs to it
