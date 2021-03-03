@@ -1,6 +1,7 @@
 import argparse
 import binascii
 import logging
+import os
 import textwrap
 from collections import Counter
 from datetime import datetime
@@ -37,11 +38,11 @@ class PcapAnalyzer(object):
         Run Method of the Pcap Analyser, method decides with mode is running.
         Live capturing or pcap read file.
         """
+        if self.debug:
+            coloredlogs.install(level='DEBUG', logger=self.logger)
         if self.list_interfaces:
             self.list_possible_interfaces()
             exit()
-        if self.debug:
-            coloredlogs.install(level='DEBUG', logger=self.logger)
 
         # Read certificates in, maybe give a root ca folder in params or load it from the website into the current
         # working directory
@@ -66,7 +67,7 @@ class PcapAnalyzer(object):
             try:
                 self.logger.info(dev + " - " + netifaces.ifaddresses(query_name)[netifaces.AF_INET][0]['addr'])
             except Exception as e:
-                self.logger.info("Error occurred on listing available interfaces")
+                # self.logger.info("Error occurred on listing available interfaces")
                 self.logger.debug(str(e))
 
     def read_file(self):
@@ -104,15 +105,16 @@ class PcapAnalyzer(object):
             # exit(1)
 
     def plot_statistics(self):
+        cwd = os.getcwd()
         countries = []
         used_root_cas = []
         cumulative_time_ca = []
         for _tree in self.cert_mgr:
             if len(_tree.all_nodes()) > 1:
+                subj = _tree.get_node(_tree.root).data.subject
+                cn = None
+                ou = None
                 try:
-                    subj = _tree.get_node(_tree.root).data.subject
-                    cn = None
-                    ou = None
                     for attr in subj:
                         oid_obj = attr.oid
                         if oid_obj.dotted_string == "2.5.4.3":      # CommonName
@@ -136,7 +138,12 @@ class PcapAnalyzer(object):
                 except Exception as e:
                     self.logger.warning(str(e))
 
-                # _tree.show()
+                filepath = os.path.join(cwd, f"Graphvizes")
+                if not os.path.exists(filepath):
+                    os.makedirs(filepath)
+                filepath = os.path.join(filepath, subj.rfc4514_string())
+                _tree.safe_tree_to_graphviz(filepath)
+
         res_countries = []
         temp = set()
         counter = Counter(countries)
@@ -190,6 +197,8 @@ class PcapAnalyzer(object):
             ax4.set_xlabel('Time')
             ax4.set_ylabel('cumulative count CA certs')
 
+
+
         plt.show()
 
     def print_statistics(self):
@@ -212,7 +221,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=textwrap.dedent(
-            '''Captures, parses and shows TLS Handshake packets and analyze the Root Certification Authorities'''))
+            '''Captures, parses and shows TLS Handshake packets and analyze the Certificate Chains'''))
     parser.add_argument('--list-interfaces', action='store_true',
                         help='list all available interfaces and exit')
     parser.add_argument('-i', '--interface', action='store',

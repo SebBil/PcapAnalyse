@@ -69,7 +69,6 @@ class RootCATree(Tree):
                 return True
         return False
 
-    def plot_tree(self):
-        pass
-
-
+    def safe_tree_to_graphviz(self, filename):
+        self.to_graphviz(filename=filename, shape='oval')
+        # self.show()

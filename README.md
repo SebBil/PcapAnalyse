@@ -5,6 +5,15 @@ PcapAnalysis only works with regular pcap files not with the wireshark pcapng fi
 
 > Echtzeitbasierte Netzwerkdatenanalyse zur Ermittlung verwendeter Root Zertifikate
 
+### Prerequirements:
+For sniffing with pcapy its nessersary that you install
++ Ubuntu/Debian:
+    > sudo apt-get install libpcap-dev
++ Windows:
+    > Installation of win-pcap: https://www.winpcap.org/devel.htm
++ For module netifaces you need to install
+    > sudo apt-get install python3-dev
+
 ### Anforderungsanalyse
 1. Die Zertifikate der Root Zertifizierungstellen sollen in das Programm eingelesen werden.
 2. Das Programm soll über Argumentenparameter entweder eine Pcap-datei erhalten oder eine Netzwerkadresse an der das Programm dann in echtzeit den Netzwerkverkehr mitschneiden kann.
