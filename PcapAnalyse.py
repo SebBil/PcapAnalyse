@@ -79,8 +79,12 @@ class PcapAnalyzer(object):
                 for timestamp, packet in capture:
                     self.captured_packets += 1
                     self.parser.analyze_packet(timestamp, packet)
-        except IOError:
-            self.logger.warning('could not parse {0}'.format(self.file))
+        except Exception as e:
+            self.logger.warning("You trying to parse pcapng file. This isn't support by PcapAnalysis\n"
+                                "Try to convert your file with editcap that's included in wireshark.\n"
+                                "$ .\editcap.exe -F libpcap <INPUT_FILE> <OUTPUT_FILE>\n"
+                                "editcap is located in wiresharks installation folder.")
+            exit(1)
 
     def start_listening(self):
         """
@@ -196,8 +200,6 @@ class PcapAnalyzer(object):
             ax4.xaxis.set_major_formatter(xfmt)
             ax4.set_xlabel('Time')
             ax4.set_ylabel('cumulative count CA certs')
-
-
 
         plt.show()
 
