@@ -70,5 +70,9 @@ class RootCATree(Tree):
         return False
 
     def safe_tree_to_graphviz(self, filename):
-        self.to_graphviz(filename=filename, shape='oval')
+        try:
+            self.to_graphviz(filename=filename, shape='oval')
+        except Exception as e:
+            self.logger.warning("Failed to create file '{}'".format(filename))
+
         # self.show()
