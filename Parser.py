@@ -187,6 +187,8 @@ class Parser(object):
         self.logger.debug('[*]   Session ID: {}'.format(session_id))
         cipher_suite, payload = self.unpacker('H', payload)
         cipher_name = Constants.CIPHER_SUITES.get(cipher_suite)
+        if cipher_name is None:
+            self.logger.info("Cipher Suite is missing: {}".format(cipher_suite))
         self.logger.debug('[*]   Used Cipher: {} - {}'.format(hex(cipher_suite), cipher_name))
         self.used_cipher_suites.append((cipher_name, ))
 
@@ -204,7 +206,7 @@ class Parser(object):
             try:
                 cert = x509.load_der_x509_certificate(crt, default_backend())
             except Exception as e:
-                self.logger.warning("[-] Paring certificate failed.")
+                self.logger.warning("[-] Parsing certificate failed.")
                 self.logger.warning("[-] Error: {}".format(e))
                 self.logger.warning("[-] Error occurred on connection: {}".format(connection_key))
                 self.logger.warning("[-] Skip this certificate chain...")

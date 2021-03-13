@@ -9,9 +9,11 @@ from datetime import datetime
 import coloredlogs
 import dpkt
 import netifaces
+import numpy as np
 import pcapy
 from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import NameOID
+from matplotlib.font_manager import FontProperties
 
 import Parser
 from GetRootCAs import GetRootCAs
@@ -32,6 +34,8 @@ class PcapAnalyzer(object):
         self.captured_packets = 0
         self.usedCipherSuites = []
         self.parser = None
+        self.start_time = None
+        self.end_time = None
 
     def run(self):
         """
@@ -72,6 +76,7 @@ class PcapAnalyzer(object):
 
     def read_file(self):
         self.logger.info("Start reading file '{}' ...".format(self.file))
+        self.start_time = datetime.now()
         try:
             with open(self.file, 'rb') as f:
                 capture = dpkt.pcap.Reader(f)
@@ -85,6 +90,7 @@ class PcapAnalyzer(object):
                                 "$ .\editcap.exe -F libpcap <INPUT_FILE> <OUTPUT_FILE>\n"
                                 "editcap is located in wiresharks installation folder.")
             exit(1)
+        self.end_time = datetime.now()
 
     def start_listening(self):
         """
@@ -92,7 +98,7 @@ class PcapAnalyzer(object):
         """
         self.logger.info("Start listening on interface '{}' ...".format(self.interface))
         cap = pcapy.open_live(self.interface, 65536, 1, 0)
-
+        self.start_time = datetime.now()
         try:
             # start sniffing packets
             while True:
@@ -107,6 +113,7 @@ class PcapAnalyzer(object):
             self.logger.info("Stopping live capturing and prepare statistics...")
             pass
             # exit(1)
+        self.end_time = datetime.now()
 
     def plot_statistics(self):
         cwd = os.getcwd()
@@ -182,13 +189,20 @@ class PcapAnalyzer(object):
             ax2.set_xlabel('Count Root CA certificate used')
 
         if len(res_used_ciphers) > 0:
+            fontP = FontProperties()
+            fontP.set_size('small')
+
             fig3, ax3 = plt.subplots(figsize=(10, 5))
             value3, label = zip(*res_used_ciphers)
-            ax3.pie(value3, labels=label, autopct='%1.0f%%')
+            patches, texts = ax3.pie(value3) # , autopct='%1.0f%%'
             ax3.set_title('Used Cipher Suites')
+            ax3.legend(patches, label, bbox_to_anchor=(1.05, 1), loc='upper left', prop=fontP)
+
+            plt.axis('equal')
+            plt.tight_layout()
 
         if len(cumulative_time_ca) > 0:
-            fig4, ax4 = plt.subplots()
+            fig4, ax4 = plt.subplots(figsize=(10, 5))
             # fig4.autofmt_xdate(rotation=25)
             cumulative_time_ca = sorted(cumulative_time_ca)
             cumu_value = range(0, len(cumulative_time_ca), 1)
@@ -205,6 +219,7 @@ class PcapAnalyzer(object):
 
     def print_statistics(self):
         self.logger.info("*" * 50 + " Statistics " + "*" * 50)
+        self.logger.info("Time for analysing: {}".format(self.end_time-self.start_time))
         self.logger.info("Captured Packets:            %d" % self.captured_packets)
         self.logger.info("Count Handshake Messages     %d" % self.parser.count_handshake_messages)
         self.logger.info("Count Certificate Messages:  %d" % self.parser.count_certificate_messages)
