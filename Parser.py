@@ -27,6 +27,7 @@ class Parser(object):
         self.count_certificate_messages = 0
         self.count_cert_chains_added = 0
         self.count_handshake_messages = 0
+        self.count_parsing_errors = 0
 
     def analyze_packet(self, ts, pkt):
         """
@@ -206,6 +207,7 @@ class Parser(object):
             try:
                 cert = x509.load_der_x509_certificate(crt, default_backend())
             except Exception as e:
+                self.count_parsing_errors += 1
                 self.logger.warning("[-] Parsing certificate failed.")
                 self.logger.warning("[-] Error: {}".format(e))
                 self.logger.warning("[-] Error occurred on connection: {}".format(connection_key))
@@ -231,6 +233,7 @@ class Parser(object):
         found = False
         for num, ca_tree in enumerate(self.root_ca_tree_list):
             self.logger.debug("[+] Try find subtree in {} of {}".format(num + 1, len(self.root_ca_tree_list)))
+
             found = ca_tree.search_nodes(nodes, ts)
             if found:
                 # self.logger.info("Found tree and successfully added certificate chain")
@@ -239,7 +242,8 @@ class Parser(object):
 
         if not found:
             self.logger.warning("[!] No Root certificate found")
-            # self.logger.warning("[!] Thumbprint of root chain: {}".format(binascii.hexlify(_tree.get_node(_tree.root).data.fingerprint(hashes.SHA256()))))
+            self.logger.warning("[!] Thumbprint of root chain: {}".format(binascii.hexlify(_tree.get_node(_tree.root).data.fingerprint(hashes.SHA256()))))
+            self.logger.warning("[!] Subject of root chain: {}".format(_tree.get_node(_tree.root).data.subject.rfc4514_string()))
             self.count_no_certificate_found += 1
             self.chains_with_no_root.append(_tree)
             # _tree.show()
