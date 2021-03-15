@@ -73,7 +73,6 @@ class GetRootCAs(object):
             parsed = urlparse(link['href'])
             filename = ''.join((parse_qs(parsed.query)["d"][0], ".crt"))
             abs_path = os.path.join(ca_folder_path, filename)
-            # print(cert.content)
             with open(abs_path, 'wb') as f:
                 f.write(cert.content)
             count += 1
@@ -97,17 +96,15 @@ class GetRootCAs(object):
                     # append only if the cert is valid and not disabled
                     in_time = self.time_in_range(cert.not_valid_before, cert.not_valid_after, datetime.datetime.now())
 
-                    if count == 115:
-                        print("tst")
                     try:
                         # check if the ca has the subject key identifier which is mandatory for a ca certificate
                         skid = cert.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_KEY_IDENTIFIER).value.digest
                         akid = cert.extensions.get_extension_for_oid(x509.ExtensionOID.AUTHORITY_KEY_IDENTIFIER).value.key_identifier
 
                         if skid != akid:
-                            print(skid)
-                            print(akid)
-                            self.logger.error("THIS SHOULDN'T BE HAPPEN ON A ROOT CERTIFICATE")
+                            self.logger.error("SKID and AKID doesn't match!! Something bad happens to this cert")
+                            self.logger.error("Check certificate: {}".format(cert.subject.rfc4514_string()))
+                            input("Enter for continue...")
 
                     except Exception as ex:
                         if 'authorityKeyIdentifier' in str(ex):
