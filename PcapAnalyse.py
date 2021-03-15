@@ -9,10 +9,9 @@ from datetime import datetime
 import coloredlogs
 import dpkt
 import netifaces
-import numpy as np
 import pcapy
 from cryptography.hazmat.primitives import hashes
-from cryptography.x509.oid import NameOID
+from cryptography import x509
 from matplotlib.font_manager import FontProperties
 
 import Parser
@@ -84,11 +83,13 @@ class PcapAnalyzer(object):
                 for timestamp, packet in capture:
                     self.captured_packets += 1
                     self.parser.analyze_packet(timestamp, packet)
+        except FileNotFoundError:
+            self.logger.warning("File {} doesn't exist. Exiting program".format(self.file))
         except Exception as e:
-            self.logger.warning("You trying to parse pcapng file. This isn't support by PcapAnalysis\n"
-                                "Try to convert your file with editcap that's included in wireshark.\n"
-                                "$ .\editcap.exe -F libpcap <INPUT_FILE> <OUTPUT_FILE>\n"
-                                "editcap is located in wiresharks installation folder.")
+            print("You trying to parse pcapng file. This isn't support by PcapAnalysis\n"
+                    "Try to convert your file with editcap that's included in wireshark.\n"
+                    "$ .\editcap.exe -F libpcap <INPUT_FILE> <OUTPUT_FILE>\n"
+                    "editcap is located in wiresharks installation folder.")
             exit(1)
         self.end_time = datetime.now()
 
@@ -125,23 +126,28 @@ class PcapAnalyzer(object):
                 subj = _tree.get_node(_tree.root).data.subject
                 cn = None
                 ou = None
+                filename = None
                 try:
                     for attr in subj:
                         oid_obj = attr.oid
-                        if oid_obj.dotted_string == "2.5.4.3":      # CommonName
+                        if oid_obj == x509.NameOID.COMMON_NAME:
                             cn = attr.value
-                        if oid_obj.dotted_string == "2.5.4.11":     # OrganizationalUnitName
+                        if oid_obj == x509.NameOID.ORGANIZATIONAL_UNIT_NAME:
                             ou = attr.value
 
                     if cn is not None:
                         used_root_cas.append((cn, _tree.get_node(_tree.root).frequency))
+                        filename = cn
                     elif ou is not None:
                         used_root_cas.append((ou, _tree.get_node(_tree.root).frequency))
+                        filename = ou
                     else:
-                        countries.append((_tree.get_node(_tree.root).data.subject.rfc4514_string(), _tree.get_node(_tree.root).frequency))
+                        used_root_cas.append((_tree.get_node(_tree.root).data.subject.rfc4514_string(),
+                                              _tree.get_node(_tree.root).frequency))
+                        filename = _tree.get_node(_tree.root).data.subject.rfc4514_string()
                     try:
                         countries.append((_tree.get_node(_tree.root).data.subject.get_attributes_for_oid(
-                            NameOID.COUNTRY_NAME)[0].value,))
+                            x509.NameOID.COUNTRY_NAME)[0].value,))
                     except Exception as ex:
                         self.logger.debug("Subject has no country listed.".format(str(ex)))
 
@@ -152,8 +158,10 @@ class PcapAnalyzer(object):
                 filepath = os.path.join(cwd, f"Graphvizes")
                 if not os.path.exists(filepath):
                     os.makedirs(filepath)
-                filepath = os.path.join(filepath, subj.rfc4514_string())
+                filepath = os.path.join(filepath, filename)
                 _tree.safe_tree_to_graphviz(filepath)
+
+                _tree.show()
 
         res_countries = []
         temp = set()
@@ -194,7 +202,7 @@ class PcapAnalyzer(object):
 
             fig3, ax3 = plt.subplots(figsize=(10, 5))
             value3, label = zip(*res_used_ciphers)
-            patches, texts = ax3.pie(value3) # , autopct='%1.0f%%'
+            patches, texts = ax3.pie(value3)
             ax3.set_title('Used Cipher Suites')
             ax3.legend(patches, label, bbox_to_anchor=(1.05, 1), loc='upper left', prop=fontP)
 
@@ -203,7 +211,6 @@ class PcapAnalyzer(object):
 
         if len(cumulative_time_ca) > 0:
             fig4, ax4 = plt.subplots(figsize=(10, 5))
-            # fig4.autofmt_xdate(rotation=25)
             cumulative_time_ca = sorted(cumulative_time_ca)
             cumu_value = range(0, len(cumulative_time_ca), 1)
             dates = [datetime.fromtimestamp(ts) for ts in cumulative_time_ca]
@@ -219,16 +226,23 @@ class PcapAnalyzer(object):
 
     def print_statistics(self):
         self.logger.info("*" * 50 + " Statistics " + "*" * 50)
-        self.logger.info("Time for analysing: {}".format(self.end_time-self.start_time))
-        self.logger.info("Captured Packets:            %d" % self.captured_packets)
-        self.logger.info("Count Handshake Messages     %d" % self.parser.count_handshake_messages)
-        self.logger.info("Count Certificate Messages:  %d" % self.parser.count_certificate_messages)
-        self.logger.info("Count Cert match Cert        %d" % self.parser.count_cert_chains_added)
-        self.logger.info("Count No Cert found          %d" % self.parser.count_no_certificate_found)
+        self.logger.info("Time for analysing:               {}".format(self.end_time - self.start_time))
+        self.logger.info("Captured Packets:                 {}".format(self.captured_packets))
+        self.logger.info("Count Handshake Messages          {}".format(self.parser.count_handshake_messages))
+        self.logger.info("Count Certificate Messages:       {}".format(self.parser.count_certificate_messages))
+        self.logger.info("Count Cert match Cert             {}".format(self.parser.count_cert_chains_added))
+        self.logger.info("Count No Cert found               {}".format(self.parser.count_no_certificate_found))
+        self.logger.info("Count Certificate Parsing errors  {}".format(self.parser.count_parsing_errors))
         self.logger.info("*" * 50 + " Statistics " + "*" * 50)
-        for chain in self.parser.chains_with_no_root:
-            self.logger.info("Thumbprint of the chain root cert: {}".format(binascii.hexlify(chain.get_node(chain.root).data.fingerprint(hashes.SHA256()))))
+
+        unique_trees = set(self.parser.chains_with_no_root)
+        for chain in unique_trees:
+            self.logger.info("Thumbprint of the chain root cert: {}".format(
+                binascii.hexlify(chain.get_node(chain.root).data.fingerprint(hashes.SHA256()))))
             chain.show()
+
+    def print_certificate_info(self, cert):
+        print(cert)
 
 
 def parse_arguments():
