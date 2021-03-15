@@ -97,12 +97,32 @@ class GetRootCAs(object):
                     # append only if the cert is valid and not disabled
                     in_time = self.time_in_range(cert.not_valid_before, cert.not_valid_after, datetime.datetime.now())
 
+                    if count == 115:
+                        print("tst")
+                    try:
+                        # check if the ca has the subject key identifier which is mandatory for a ca certificate
+                        skid = cert.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_KEY_IDENTIFIER).value.digest
+                        akid = cert.extensions.get_extension_for_oid(x509.ExtensionOID.AUTHORITY_KEY_IDENTIFIER).value.key_identifier
+
+                        if skid != akid:
+                            print(skid)
+                            print(akid)
+                            self.logger.error("THIS SHOULDN'T BE HAPPEN ON A ROOT CERTIFICATE")
+
+                    except Exception as ex:
+                        if 'authorityKeyIdentifier' in str(ex):
+                            self.logger.debug("Certificate '{}' No Authority Identifier found".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode(), str(ex)))
+                            pass
+                        elif 'subjectKeyIdentifier' in str(ex):
+                            self.logger.error("Certificate '{}' No Subject Identifier found. CA Cert must have a this".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode()))
+                            continue
+
                     if in_time:
                         cert_mgr.append(_tree)
                         count += 1
-                        self.logger.info("Successfully load %d of %d Certificates" % (count, len(files)))
+                        self.logger.info("Successfully {} load {} of {} Certificates".format(cert.subject.rfc4514_string(), count, len(files)))
                     else:
-                        self.logger.info("Certificate '{}' is no valid anymore".format(cert.fingerprint(hashes.SHA256())))
+                        self.logger.info("Certificate '{}' is no valid anymore".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode()))
                         self.logger.debug("Not valid before: {}".format(cert.not_valid_before))
                         self.logger.debug("Current GMT Time: {}".format(
                             datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
