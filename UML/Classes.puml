@@ -3,15 +3,23 @@ class RootCATree {
     + logger : Logger
 
     + create_node(tag=None, identifier=None, parent=None, data=None)
-    + search_add_nodes(nodes)
-    + plot_tree()
+    + search_nodes(nodes, ts)
+    + insert_into_tree(ca_tree_node, nodes, ts)
+    + safe_tree_to_graphviz(filename)
 }
 
+treelib.Tree <|-- RootCATree
+@enduml
+
+@startuml
 class CertNode {
     + frequency : Int
     + first_seen : Date
 }
+treelib.Node <|-- CertNode
+@enduml
 
+@startuml
 class GetRootCAs {
     + logger : Logger
     + root_ca_folder : String
@@ -21,16 +29,20 @@ class GetRootCAs {
     - _get_all_roots_from_web()
     - _load_root_cas(path, cert_mgr)
 }
+@enduml
 
-
+@startuml
 class Parser {
     + root_ca_tree_list : List
     + used_cipher_suites : List
     + streambuffer : Dict
     + encrypted_streams : List
+    + count_no_certificate_found : Int
+    + chains_with_no_root : List
     + count_certificate_messages : Int
     + count_cert_chains_added : Int
     + count_handshake_messages : Int
+    + count_parsing_errors : Int
     + logger : Logger
 
     + analyze_packet(ts, pkt)
@@ -43,7 +55,9 @@ class Parser {
     + parse_server_hello(handshake)
     + parse_server_certificate(tls_cert_msg, client, server)
 }
+@enduml
 
+@startuml
 class PcapAnalyzer {
     + logger : Logger
     + cert_mgr : Dict
@@ -63,8 +77,4 @@ class PcapAnalyzer {
     + plot_statistics()
     + print_statistics()
 }
-
-treelib.Tree <|-- RootCATree
-treelib.Node <|-- CertNode
-
 @enduml

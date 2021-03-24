@@ -2,6 +2,7 @@ import argparse
 import binascii
 import logging
 import os
+import shutil
 import textwrap
 from collections import Counter
 from datetime import datetime
@@ -22,8 +23,8 @@ import matplotlib.dates as md
 
 class PcapAnalyzer(object):
     def __init__(self, args):
-        self.logger = logging.getLogger("pcap_analysis")
-        coloredlogs.install(level='INFO', logger=self.logger)
+        self.count_used_root_cas = 0
+        self.logger = None
         self.cert_mgr = []
         self.interface = args.interface
         self.file = args.file
@@ -36,13 +37,41 @@ class PcapAnalyzer(object):
         self.start_time = None
         self.end_time = None
 
+    def init_logging(self):
+        self.logger = logging.getLogger("PcapAnalyzer")
+        self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.DEBUG)
+
+        # creating log directory if not exist
+        cwd = os.getcwd()
+        log_dir = os.path.join(cwd, f"log")
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file = os.path.join(log_dir, self.file.split('\\')[-1].split('.')[0] + f".log")
+
+        fh = logging.FileHandler(log_file, 'w', 'utf-8')
+
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.INFO)
+
+        # creating a formatter
+        formatter = logging.Formatter('%(asctime)s  %(name)s  %(levelname)s: %(message)s')
+
+        # setting handler format
+        fh.setFormatter(formatter)
+        ch.setFormatter(formatter)
+
+        # add the handlers to the logger
+        self.logger.addHandler(fh)
+        self.logger.addHandler(ch)
+
     def run(self):
         """
         Run Method of the Pcap Analyser, method decides with mode is running.
         Live capturing or pcap read file.
         """
-        if self.debug:
-            coloredlogs.install(level='DEBUG', logger=self.logger)
+        #if self.debug:
+        #    coloredlogs.install(level='DEBUG', logger=self.logger)
         if self.list_interfaces:
             self.list_possible_interfaces()
             exit()
@@ -86,12 +115,16 @@ class PcapAnalyzer(object):
         except FileNotFoundError:
             self.logger.warning("File {} doesn't exist. Exiting program".format(self.file))
         except Exception as e:
-            print("You trying to parse pcapng file. This isn't support by PcapAnalysis\n"
+            if 'NoneType' in str(e):
+                pass
+            else:
+                print("You trying to parse pcapng file. This isn't support by PcapAnalysis\n"
                     "Try to convert your file with editcap that's included in wireshark.\n"
                     "$ .\editcap.exe -F libpcap <INPUT_FILE> <OUTPUT_FILE>\n"
                     "editcap is located in wiresharks installation folder.")
-            exit(1)
+                exit(1)
         self.end_time = datetime.now()
+        self.logger.info("End of File reached, analyse certificate chains...")
 
     def start_listening(self):
         """
@@ -105,15 +138,12 @@ class PcapAnalyzer(object):
             while True:
                 (timestamp, packet) = cap.next()
                 try:
-                    # self.logger.info('%s: captured %d bytes' % (datetime.now(), header))
                     self.captured_packets += 1
                     self.parser.analyze_packet(timestamp, packet)
                 except Exception as e:
                     self.logger.warning(str(e))
         except KeyboardInterrupt as key:
             self.logger.info("Stopping live capturing and prepare statistics...")
-            pass
-            # exit(1)
         self.end_time = datetime.now()
 
     def plot_statistics(self):
@@ -123,6 +153,7 @@ class PcapAnalyzer(object):
         cumulative_time_ca = []
         for _tree in self.cert_mgr:
             if len(_tree.all_nodes()) > 1:
+                self.count_used_root_cas += 1
                 subj = _tree.get_node(_tree.root).data.subject
                 cn = None
                 ou = None
@@ -155,7 +186,7 @@ class PcapAnalyzer(object):
                 except Exception as e:
                     self.logger.warning(str(e))
 
-                filepath = os.path.join(cwd, f"Graphvizes")
+                filepath = os.path.join(cwd, self.file.split('\\')[-1].split('.')[0] + f"_Graphvizes")
                 if not os.path.exists(filepath):
                     os.makedirs(filepath)
                 filepath = os.path.join(filepath, filename)
@@ -222,10 +253,11 @@ class PcapAnalyzer(object):
             ax4.set_xlabel('Time')
             ax4.set_ylabel('cumulative count CA certs')
 
+        self.produce_svg()
         plt.show()
 
     def print_statistics(self):
-        self.logger.info("*" * 50 + " Statistics " + "*" * 50)
+        self.logger.info("*" * 20 + " Statistics " + "*" * 20)
         self.logger.info("Time for analysing:               {}".format(self.end_time - self.start_time))
         self.logger.info("Captured Packets:                 {}".format(self.captured_packets))
         self.logger.info("Count Handshake Messages          {}".format(self.parser.count_handshake_messages))
@@ -233,16 +265,35 @@ class PcapAnalyzer(object):
         self.logger.info("Count Cert match Cert             {}".format(self.parser.count_cert_chains_added))
         self.logger.info("Count No Cert found               {}".format(self.parser.count_no_certificate_found))
         self.logger.info("Count Certificate Parsing errors  {}".format(self.parser.count_parsing_errors))
-        self.logger.info("*" * 50 + " Statistics " + "*" * 50)
+        self.logger.info("*" * 20 + " Statistics " + "*" * 20)
 
-        unique_trees = set(self.parser.chains_with_no_root)
-        for chain in unique_trees:
-            self.logger.info("Thumbprint of the chain root cert: {}".format(
-                binascii.hexlify(chain.get_node(chain.root).data.fingerprint(hashes.SHA256()))))
-            chain.show()
+        unique_trees = dict()
+        for chain in self.parser.chains_with_no_root:
+            thumbprint = binascii.hexlify(chain.get_node(chain.root).data.fingerprint(hashes.SHA256()))
+            if thumbprint not in unique_trees:
+                unique_trees[thumbprint] = chain
 
-    def print_certificate_info(self, cert):
-        print(cert)
+        self.logger.info("*"*20 + "Trees for that no Root cert exist" + "*"*20)
+        for tree in unique_trees.values():
+            for node in tree.all_nodes():
+                self.logger.info(node)
+        self.logger.info("*"*20 + "Trees for that no Root cert exist" + "*"*20)
+
+    def produce_svg(self):
+        # check if dot.exe is in path
+        command = 'dot.exe'
+        if shutil.which(command) is None:
+            self.logger.info("No graphics can be created. Missing dot executeable")
+            return
+
+        cwd = os.getcwd()
+        filepath = os.path.join(cwd, self.file.split('\\')[-1].split('.')[0] + f"_Graphvizes")
+        self.logger.info("Graphviz is installed. Create svg from dot files in folder '{}".format(filepath))
+        files = os.listdir(filepath)
+        for file in files:
+            abs_path = os.path.join(filepath, file)
+            cmd = 'dot -Tsvg "{}" -o "{}.svg"'.format(abs_path, abs_path)
+            os.system(cmd)
 
 
 def parse_arguments():
@@ -270,6 +321,7 @@ def main():
     args = parse_arguments()
 
     analyzer = PcapAnalyzer(args)
+    analyzer.init_logging()
     analyzer.run()
 
     analyzer.print_statistics()

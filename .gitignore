@@ -5,5 +5,7 @@ __pycache__/
 *$py.class
 
 #Folders that are created by program
-Graphvizes
+*Graphvizes
+log
 RootCAs
+Thesis

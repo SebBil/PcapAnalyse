@@ -8,6 +8,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 import dpkt
+from dpkt.ssl import SSL3_VERSION_BYTES, SSL3Exception, TLSRecord
 from treelib import exceptions
 
 import CertNode
@@ -17,7 +18,7 @@ import RootCATree
 
 class Parser(object):
     def __init__(self, crt_m, used_cs):
-        self.logger = logging.getLogger("pcap_analysis.parser")
+        self.logger = logging.getLogger("PcapAnalyzer."+__name__)
         self.root_ca_tree_list = crt_m
         self.used_cipher_suites = used_cs
         self.streambuffer = {}
@@ -77,15 +78,38 @@ class Parser(object):
         self.logger.debug(
             '[*] Added {0} bytes (seq {1}) to streambuffer for {2}'.format(len(partial_stream), ip.data.seq, connection))
 
+    def tls_factory(self, buf):
+        i, n = 0, len(buf)
+        msgs = []
+        while i + 5 <= n:
+            v = buf[i + 1:i + 3]
+            if v in SSL3_VERSION_BYTES:
+                try:
+                    msg = TLSRecord(buf[i:])
+                    msgs.append(msg)
+                except dpkt.NeedData:
+                    break
+            else:
+                if not msgs:
+                    self.logger.debug("Found no message")
+                    raise SSL3Exception('Bad TLS version in buf: %r' % buf[i:i + 5])
+                else:
+                    self.logger.debug("Found messages, but rest of packet can not be used... dicard {} bytes".format(n - i))
+                    self.logger.debug("Bytes discarded: {}".format(binascii.hexlify(buf[i:])))
+                    return msgs, len(buf)
+            i += len(msg)
+        return msgs, i
+
     def parse_tls_records(self, ip, stream, ts):
         """
         Parses TLS Records.
         """
         try:
-            records, bytes_used = dpkt.ssl.tls_multi_factory(stream)
+            records, bytes_used = self.tls_factory(stream)
         except dpkt.ssl.SSL3Exception as exception:
             self.logger.debug('[-] Exception (tls_multi_factory) while parsing TLS records: {0}'.format(exception))
             return
+
         connection = '{0}:{1}-{2}:{3}'.format(socket.inet_ntoa(ip.src), ip.data.sport, socket.inet_ntoa(ip.dst),
                                               ip.data.dport)
 
@@ -185,11 +209,11 @@ class Parser(object):
         """
         payload = handshake.data
         session_id, payload = self.unpacker('p', payload)
-        self.logger.debug('[*]   Session ID: {}'.format(session_id))
+        # self.logger.debug('[*]   Session ID: {}'.format(session_id))
         cipher_suite, payload = self.unpacker('H', payload)
         cipher_name = Constants.CIPHER_SUITES.get(cipher_suite)
         if cipher_name is None:
-            self.logger.info("Cipher Suite is missing: {}".format(cipher_suite))
+            self.logger.error("Cipher Suite is missing: {}".format(cipher_suite))
         self.logger.debug('[*]   Used Cipher: {} - {}'.format(hex(cipher_suite), cipher_name))
         self.used_cipher_suites.append((cipher_name, ))
 
@@ -203,11 +227,12 @@ class Parser(object):
         self.count_certificate_messages += 1
         _tree = RootCATree.RootCATree(node_class=CertNode.CertNode)
         pre = None
-        for crt in reversed(tls_cert_msg.certificates):
+        for crt in reversed(tls_cert_msg.certificates[1:]):
             try:
                 cert = x509.load_der_x509_certificate(crt, default_backend())
             except Exception as e:
                 self.count_parsing_errors += 1
+                self.logger.debug(binascii.hexlify(crt))
                 self.logger.warning("[-] Parsing certificate failed.")
                 self.logger.warning("[-] Error: {}".format(e))
                 self.logger.warning("[-] Error occurred on connection: {}".format(connection_key))
@@ -219,7 +244,7 @@ class Parser(object):
                                   data=cert,
                                   parent=pre)
                 pre = binascii.hexlify(cert.fingerprint(hashes.SHA256()))
-            except exceptions.DuplicatedNodeIdError as duplicate:
+            except exceptions.DuplicatedNodeIdError:
                 self.logger.debug("[*] Node already exists: {}".format(cert.fingerprint(hashes.SHA256())))
                 pass
             except Exception as ex:
@@ -242,8 +267,12 @@ class Parser(object):
 
         if not found:
             self.logger.warning("[!] No Root certificate found")
-            self.logger.warning("[!] Thumbprint of root chain: {}".format(binascii.hexlify(_tree.get_node(_tree.root).data.fingerprint(hashes.SHA256()))))
-            self.logger.warning("[!] Subject of root chain: {}".format(_tree.get_node(_tree.root).data.subject.rfc4514_string()))
-            self.count_no_certificate_found += 1
-            self.chains_with_no_root.append(_tree)
-            # _tree.show()
+            if not _tree:
+                self.logger.debug("[!] Certificate chain is empty")
+                self.logger.debug("[*] No Certificates were sent.")
+            else:
+                _tree.show()
+                self.logger.warning("[!] Thumbprint of root chain: {}".format(binascii.hexlify(_tree.get_node(_tree.root).data.fingerprint(hashes.SHA256()))))
+                self.logger.warning("[!] Subject of root chain: {}".format(_tree.get_node(_tree.root).data.subject.rfc4514_string()))
+                self.count_no_certificate_found += 1
+                self.chains_with_no_root.append(_tree)

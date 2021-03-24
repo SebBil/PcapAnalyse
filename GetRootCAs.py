@@ -19,7 +19,7 @@ logger = logging.getLogger()
 class GetRootCAs(object):
 
     def __init__(self, folder):
-        self.logger = logging.getLogger('pcap_analysis.get_root_cas')
+        self.logger = logging.getLogger("PcapAnalyzer." + __name__)
         self.root_ca_folder = folder
         self.root_ca_download_url = r'https://ccadb-public.secure.force.com/microsoft/IncludedCACertificateReportForMSFT'
 

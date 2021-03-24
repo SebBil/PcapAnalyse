@@ -1,4 +1,9 @@
+import codecs
 import logging
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 
 from treelib import Tree, exceptions
 from cryptography import x509
@@ -7,7 +12,7 @@ from cryptography import x509
 class RootCATree(Tree):
     def __init__(self, node_class=None):
         super().__init__(node_class=node_class)
-        self.logger = logging.getLogger("pcap_analysis.root_ca_tree")
+        self.logger = logging.getLogger("PcapAnalyzer."+__name__)
 
     def create_node(self, tag=None, identifier=None, parent=None, data=None):
         node = self.node_class(tag=tag, identifier=identifier, data=data)
@@ -61,11 +66,45 @@ class RootCATree(Tree):
                 self.logger.warning("[-] Adding node not successfully: {}".format(str(e)))
             parent = node
 
-    def safe_tree_to_graphviz(self, filename):
-        try:
-            self.to_graphviz(filename=filename, shape='oval')
-        except Exception as e:
-            self.logger.warning("Failed to create file '{}'".format(filename))
-            self.logger.warning("Error message: {}".format(str(e)))
+    def safe_tree_to_graphviz(self, filename, shape='oval', graph='digraph'):
+        """Exports the tree in the dot format of the graphviz software"""
+        nodes, connections = [], []
+        if self.nodes:
+            for n in self.expand_tree(mode=self.WIDTH):
+                nid = self[n].identifier
+                _tag = self[n].tag.split(',')
+                s = '\n'
+                s = s.join(_tag)
+                state = '"{0}" [label="{1}", shape={2}]'.format(
+                    nid, s, shape)
+                nodes.append(state)
 
-        # self.show()
+                for c in self.children(nid):
+                    cid = c.identifier
+                    connections.append('"{0}" -> "{1}"'.format(nid, cid))
+
+        # write nodes and connections to dot format
+        is_plain_file = filename is not None
+        if is_plain_file:
+            f = codecs.open(filename, 'w', 'utf-8')
+        else:
+            f = StringIO()
+
+        f.write(graph + ' tree {\n')
+        for n in nodes:
+            f.write('\t' + n + '\n')
+
+        if len(connections) > 0:
+            f.write('\n')
+
+        for c in connections:
+            f.write('\t' + c + '\n')
+
+        f.write('}')
+
+        if not is_plain_file:
+            print(f.getvalue())
+
+        f.close()
+
+

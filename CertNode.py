@@ -6,3 +6,6 @@ class CertNode(Node):
         super().__init__(tag=tag, identifier=identifier, data=data)
         self.frequency = 0
         self.first_seen = None
+
+
+
