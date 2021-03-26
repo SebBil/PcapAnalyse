@@ -24,9 +24,8 @@ class Parser(object):
         self.streambuffer = {}
         self.encrypted_streams = []
         self.count_no_certificate_found = 0
-        self.chains_with_no_root = []
+        self.cert_with_no_parent = []
         self.count_certificate_messages = 0
-        self.count_cert_chains_added = 0
         self.count_handshake_messages = 0
         self.count_parsing_errors = 0
 
@@ -94,9 +93,9 @@ class Parser(object):
                     self.logger.debug("Found no message")
                     raise SSL3Exception('Bad TLS version in buf: %r' % buf[i:i + 5])
                 else:
-                    self.logger.debug("Found messages, but rest of packet can not be used... dicard {} bytes".format(n - i))
+                    self.logger.debug("Found messages, but rest of packet can not be used... discard {} bytes".format(n - i))
                     self.logger.debug("Bytes discarded: {}".format(binascii.hexlify(buf[i:])))
-                    return msgs, len(buf)
+                    break
             i += len(msg)
         return msgs, i
 
@@ -105,7 +104,7 @@ class Parser(object):
         Parses TLS Records.
         """
         try:
-            records, bytes_used = self.tls_factory(stream)
+            records, bytes_used = dpkt.ssl.tls_multi_factory(stream)  # self.tls_factory(stream)  #
         except dpkt.ssl.SSL3Exception as exception:
             self.logger.debug('[-] Exception (tls_multi_factory) while parsing TLS records: {0}'.format(exception))
             return
@@ -227,7 +226,7 @@ class Parser(object):
         self.count_certificate_messages += 1
         _tree = RootCATree.RootCATree(node_class=CertNode.CertNode)
         pre = None
-        for crt in reversed(tls_cert_msg.certificates[1:]):
+        for crt in reversed(tls_cert_msg.certificates):
             try:
                 cert = x509.load_der_x509_certificate(crt, default_backend())
             except Exception as e:
@@ -254,25 +253,47 @@ class Parser(object):
                 self.logger.warning("[-] Skip this certificate chain...")
                 return
 
-        nodes = _tree.all_nodes()
-        found = False
-        for num, ca_tree in enumerate(self.root_ca_tree_list):
-            self.logger.debug("[+] Try find subtree in {} of {}".format(num + 1, len(self.root_ca_tree_list)))
+        self.logger.info("[*] Try to find parent for each node in all root ca trees...")
+        for node in _tree.all_nodes():
+            self.logger.debug("[*] Try to find parent for node: {}".format(node.tag))
+            found = False
+            try:
+                akid = node.data.extensions.get_extension_for_oid(x509.oid.ExtensionOID.AUTHORITY_KEY_IDENTIFIER).value.key_identifier
+                for ca_tree in self.root_ca_tree_list:
+                    found = ca_tree.search_nodes(node, ts)
+                    if found:
+                        break
 
-            found = ca_tree.search_nodes(nodes, ts)
-            if found:
-                # self.logger.info("Found tree and successfully added certificate chain")
-                self.count_cert_chains_added += 1
-                break
+                if not found:
+                    self.logger.info("[*] No Root certificate found")
+                    self.logger.info("[*] AKID exist: {}".format(binascii.hexlify(akid.decode())))
+                    self.logger.info("[*] Maybe this cert is a root CA cert")
+                    # check root node of the ca tree list
+                    help_found = False
+                    for _ca_tree in self.root_ca_tree_list:
+                        root = _ca_tree.get_node(_ca_tree.root)
+                        if _ca_tree.check_if_is_root_ca(root, node, ts):
+                            help_found = True
+                            break
+                    if not help_found:
+                        self.logger.warning("[!] Nothing found to this cert")
+                        self.cert_with_no_parent.append(node.data)
 
-        if not found:
-            self.logger.warning("[!] No Root certificate found")
-            if not _tree:
-                self.logger.debug("[!] Certificate chain is empty")
-                self.logger.debug("[*] No Certificates were sent.")
-            else:
-                _tree.show()
-                self.logger.warning("[!] Thumbprint of root chain: {}".format(binascii.hexlify(_tree.get_node(_tree.root).data.fingerprint(hashes.SHA256()))))
-                self.logger.warning("[!] Subject of root chain: {}".format(_tree.get_node(_tree.root).data.subject.rfc4514_string()))
-                self.count_no_certificate_found += 1
-                self.chains_with_no_root.append(_tree)
+            except Exception as ex:
+                if 'authorityKeyIdentifier' in str(ex):
+                    self.logger.info("[*] The Searching certificate has no authority key identifier. Maybe this cert is a root CA cert")
+                    # check root node of the ca tree list
+                    help_found = False
+                    for _ca_tree in self.root_ca_tree_list:
+                        root = _ca_tree.get_node(_ca_tree.root)
+                        if _ca_tree.check_if_is_root_ca(root, node, ts):
+                            help_found = True
+                            break
+                    if not help_found:
+                        self.logger.warning("[!] Nothing found to this cert")
+                        self.cert_with_no_parent.append(node.data)
+                else:
+                    self.logger.error(str(ex))
+
+        self.logger.info("[*] End of this certificate message reached...")
+

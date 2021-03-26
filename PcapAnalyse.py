@@ -29,7 +29,7 @@ class PcapAnalyzer(object):
         self.interface = args.interface
         self.file = args.file
         self.list_interfaces = args.list_interfaces
-        self.debug = args.debug
+        # self.debug = args.debug
         self.ca_folder = args.ca_folder
         self.captured_packets = 0
         self.usedCipherSuites = []
@@ -37,7 +37,7 @@ class PcapAnalyzer(object):
         self.start_time = None
         self.end_time = None
 
-    def init_logging(self):
+    def init_logging_read_file(self):
         self.logger = logging.getLogger("PcapAnalyzer")
         self.logger.setLevel(logging.INFO)
         self.logger.setLevel(logging.DEBUG)
@@ -47,7 +47,11 @@ class PcapAnalyzer(object):
         log_dir = os.path.join(cwd, f"log")
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_file = os.path.join(log_dir, self.file.split('\\')[-1].split('.')[0] + f".log")
+
+        if self.file:
+            log_file = os.path.join(log_dir, self.file.split('\\')[-1].split('.')[0] + f".log")
+        else:
+            log_file = os.path.join(log_dir, datetime.now().strftime('PcapAnalyzer_%H_%M_%d_%m_%Y.log'))
 
         fh = logging.FileHandler(log_file, 'w', 'utf-8')
 
@@ -67,17 +71,16 @@ class PcapAnalyzer(object):
 
     def run(self):
         """
-        Run Method of the Pcap Analyser, method decides with mode is running.
+        Run Method of the Pcap Analyser, method decides which mode is running.
         Live capturing or pcap read file.
         """
-        #if self.debug:
-        #    coloredlogs.install(level='DEBUG', logger=self.logger)
         if self.list_interfaces:
             self.list_possible_interfaces()
             exit()
 
-        # Read certificates in, maybe give a root ca folder in params or load it from the website into the current
-        # working directory
+        self.init_logging_read_file()
+        # Read certificates in, maybe give a root ca folder in params or
+        # load it from the website into the current working directory
         sub = GetRootCAs(self.ca_folder)
         sub.get_roots(self.cert_mgr)
 
@@ -97,10 +100,11 @@ class PcapAnalyzer(object):
             if dev.startswith(r'\Device\NPF_'):
                 query_name = dev[12:]
             try:
-                self.logger.info(dev + " - " + netifaces.ifaddresses(query_name)[netifaces.AF_INET][0]['addr'])
+                print(dev + " - " + netifaces.ifaddresses(query_name)[netifaces.AF_INET][0]['addr'])
             except Exception as e:
+                pass
                 # self.logger.info("Error occurred on listing available interfaces")
-                self.logger.debug(str(e))
+                # print(str(e))
 
     def read_file(self):
         self.logger.info("Start reading file '{}' ...".format(self.file))
@@ -114,6 +118,7 @@ class PcapAnalyzer(object):
                     self.parser.analyze_packet(timestamp, packet)
         except FileNotFoundError:
             self.logger.warning("File {} doesn't exist. Exiting program".format(self.file))
+            exit(-1)
         except Exception as e:
             if 'NoneType' in str(e):
                 pass
@@ -210,6 +215,7 @@ class PcapAnalyzer(object):
                 res_used_ciphers.append((counter[sub],) + sub)
                 temp.add(sub)
 
+        self.logger.info(res_used_ciphers)
         if len(res_countries) > 0:
             fig1, ax1 = plt.subplots()
             value1, label = zip(*res_countries)
@@ -232,10 +238,15 @@ class PcapAnalyzer(object):
             fontP.set_size('small')
 
             fig3, ax3 = plt.subplots(figsize=(10, 5))
-            value3, label = zip(*res_used_ciphers)
-            patches, texts = ax3.pie(value3)
+            value3, labels = zip(*res_used_ciphers)
+            max_len = max(len(l) for l in labels)
+            percent = []
+            for i in value3:
+                percent.append(i*100/sum(value3))
+            labels = ['{0} {1:1.2f}%'.format(l.ljust(40), s) for l, s in zip(labels, percent)]
+            ax3.pie(value3)
             ax3.set_title('Used Cipher Suites')
-            ax3.legend(patches, label, bbox_to_anchor=(1.05, 1), loc='upper left', prop=fontP)
+            ax3.legend(labels, bbox_to_anchor=(1.05, 1), loc='upper left', prop=fontP)
 
             plt.axis('equal')
             plt.tight_layout()
@@ -253,7 +264,7 @@ class PcapAnalyzer(object):
             ax4.set_xlabel('Time')
             ax4.set_ylabel('cumulative count CA certs')
 
-        self.produce_svg()
+        # self.produce_svg()
         plt.show()
 
     def print_statistics(self):
@@ -262,22 +273,25 @@ class PcapAnalyzer(object):
         self.logger.info("Captured Packets:                 {}".format(self.captured_packets))
         self.logger.info("Count Handshake Messages          {}".format(self.parser.count_handshake_messages))
         self.logger.info("Count Certificate Messages:       {}".format(self.parser.count_certificate_messages))
-        self.logger.info("Count Cert match Cert             {}".format(self.parser.count_cert_chains_added))
-        self.logger.info("Count No Cert found               {}".format(self.parser.count_no_certificate_found))
+        # self.logger.info("Count Cert match Cert             {}".format(self.parser.count_cert_chains_added))
+        # self.logger.info("Count No Cert found               {}".format(self.parser.count_no_certificate_found))
         self.logger.info("Count Certificate Parsing errors  {}".format(self.parser.count_parsing_errors))
         self.logger.info("*" * 20 + " Statistics " + "*" * 20)
 
         unique_trees = dict()
-        for chain in self.parser.chains_with_no_root:
-            thumbprint = binascii.hexlify(chain.get_node(chain.root).data.fingerprint(hashes.SHA256()))
+        for cert in self.parser.cert_with_no_parent:
+            thumbprint = binascii.hexlify(cert.fingerprint(hashes.SHA256()))
             if thumbprint not in unique_trees:
-                unique_trees[thumbprint] = chain
+                unique_trees[thumbprint] = cert
 
-        self.logger.info("*"*20 + "Trees for that no Root cert exist" + "*"*20)
-        for tree in unique_trees.values():
-            for node in tree.all_nodes():
-                self.logger.info(node)
-        self.logger.info("*"*20 + "Trees for that no Root cert exist" + "*"*20)
+        self.logger.info("*"*20 + "Certificates that are not added" + "*"*20)
+        for thumbprint, cert in unique_trees.items():
+            self.logger.warning("Cert subject: {}".format(cert.subject.rfc4514_string()))
+            self.logger.warning("|----Thumbprint of the cert: {}".format(thumbprint.decode()))
+            # self.logger.warning("|----SKID: ".format())
+            # self.logger.warning("|----AKID: ")
+            # tree.show()
+        self.logger.info("*"*20 + "Certificates that are not added" + "*"*20)
 
     def produce_svg(self):
         # check if dot.exe is in path
@@ -303,15 +317,23 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=textwrap.dedent(
-            '''Captures, parses and shows TLS Handshake packets and analyze the Certificate Chains'''))
-    parser.add_argument('--list-interfaces', action='store_true',
+            '''
+            ################
+            # PcapAnalyzer #
+            ################
+            Captures, parses and shows TLS Handshake packets and analyze the Certificate Chains
+            '''
+        ))
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--list-interfaces', action='store_true',
                         help='list all available interfaces and exit')
-    parser.add_argument('-i', '--interface', action='store',
+    group.add_argument('-i', '--interface', action='store',
                         help='the interface to listen on')
-    parser.add_argument('-f', '--file', metavar='FILE', action='store',
+    group.add_argument('-f', '--file', metavar='FILE', action='store',
                         help='read from file (don\'t capture live packets)')
-    parser.add_argument('-d', '--debug', action='store_true',
-                        help='increase output verbosity')
+    # not needed because of the debug log file
+    # parser.add_argument('-d', '--debug', action='store_true',
+    #                     help='increase output verbosity')
     parser.add_argument('-c', '--ca_folder', action='store', metavar='DIRECTORY',
                         help='the folder where the root CA certificates stored. Provide the full path!')
     return parser.parse_args()
@@ -321,11 +343,11 @@ def main():
     args = parse_arguments()
 
     analyzer = PcapAnalyzer(args)
-    analyzer.init_logging()
     analyzer.run()
 
     analyzer.print_statistics()
     analyzer.plot_statistics()
+    analyzer.produce_svg()
 
 
 if __name__ == "__main__":

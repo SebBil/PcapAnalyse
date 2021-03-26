@@ -94,7 +94,7 @@ class GetRootCAs(object):
                                       data=cert)
 
                     # append only if the cert is valid and not disabled
-                    in_time = self.time_in_range(cert.not_valid_before, cert.not_valid_after, datetime.datetime.now())
+                    in_time = self._time_in_range(cert.not_valid_before, cert.not_valid_after, datetime.datetime.now())
 
                     try:
                         # check if the ca has the subject key identifier which is mandatory for a ca certificate
@@ -129,7 +129,7 @@ class GetRootCAs(object):
 
         self.logger.info("***************** Finished. Read all Root CA's from {} *****************".format(path))
 
-    def time_in_range(self, start, end, x):
+    def _time_in_range(self, start, end, x):
         """ Return true if x is in the range [start, end]"""
         if start <= end:
             return start <= x <= end

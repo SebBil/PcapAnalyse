@@ -2,10 +2,12 @@
 class RootCATree {
     + logger : Logger
 
-    + create_node(tag=None, identifier=None, parent=None, data=None)
-    + search_nodes(nodes, ts)
-    + insert_into_tree(ca_tree_node, nodes, ts)
-    + safe_tree_to_graphviz(filename)
+    + __init__(self, node_class=None)
+    + create_node(self, tag=None, identifier=None, parent=None, data=None)
+    + check_if_is_root_ca(self, root, search, ts)
+    + search_nodes(self, search_node, ts)
+    + insert_into_tree(self, parent_node, add_node, ts)
+    + safe_tree_to_graphviz(self, filename, shape='oval', graph='digraph')
 }
 
 treelib.Tree <|-- RootCATree
@@ -15,6 +17,8 @@ treelib.Tree <|-- RootCATree
 class CertNode {
     + frequency : Int
     + first_seen : Date
+
+    + __init__(self, tag, identifier, data)
 }
 treelib.Node <|-- CertNode
 @enduml
@@ -25,14 +29,17 @@ class GetRootCAs {
     + root_ca_folder : String
     + root_ca_download_url : String
 
-    + get_roots(cert_mgr)
-    - _get_all_roots_from_web()
+    + __init__(self, folder)
+    + get_roots(self, cert_mgr)
+    - _get_all_roots_from_web(self)
     - _load_root_cas(path, cert_mgr)
+    - _time_in_range(self, start, end, x)
 }
 @enduml
 
 @startuml
 class Parser {
+    + cert_with_no_parent : List
     + root_ca_tree_list : List
     + used_cipher_suites : List
     + streambuffer : Dict
@@ -45,15 +52,17 @@ class Parser {
     + count_parsing_errors : Int
     + logger : Logger
 
-    + analyze_packet(ts, pkt)
-    + parse_ip_packet(ip)
-    + parse_tcp_packet(ip)
-    + add_to_buffer(ip, partial_stream)
-    + parse_tls_records(ip, stream)
-    + unpacker(type_string, packet)
-    + parse_tls_handshake(ip, data, record_length)
-    + parse_server_hello(handshake)
-    + parse_server_certificate(tls_cert_msg, client, server)
+    + __init__(self, crt_m, used_cs)
+    + analyze_packet(self, ts, pkt)
+    + parse_ip_packet(self, ip, ts)
+    + parse_tcp_packet(self, ip, ts)
+    + add_to_buffer(self, ip, partial_stream)
+    + tls_factory(self, buf)
+    + parse_tls_records(self, ip, stream, ts)
+    + unpacker(self, type_string, packet)
+    + parse_tls_handshake(self, ip, data, record_length, ts)
+    + parse_server_hello(self, handshake)
+    + parse_server_certificate(self, tls_cert_msg, client, server, ts)
 }
 @enduml
 
@@ -70,11 +79,14 @@ class PcapAnalyzer {
     + usedCipherSuites : List
     + parser : Parser
 
-    + run()
-    + list_interfaces()
-    + read_file()
-    + start_listening()
-    + plot_statistics()
-    + print_statistics()
+    + __init__(self, args)
+    + init_logging_read_file(self)
+    + run(self)
+    + list_possible_interfaces(self
+    + read_file(self)
+    + start_listening(self)
+    + plot_statistics(self)
+    + print_statistics(self)
+    + produce_svg(self)
 }
 @enduml
