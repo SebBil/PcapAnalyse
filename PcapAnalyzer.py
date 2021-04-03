@@ -7,7 +7,6 @@ import textwrap
 from collections import Counter
 from datetime import datetime
 
-import coloredlogs
 import dpkt
 import netifaces
 import pcapy
@@ -29,13 +28,17 @@ class PcapAnalyzer(object):
         self.interface = args.interface
         self.file = args.file
         self.list_interfaces = args.list_interfaces
-        # self.debug = args.debug
+        # self.info = args.info
         self.ca_folder = args.ca_folder
         self.captured_packets = 0
         self.usedCipherSuites = []
         self.parser = None
         self.start_time = None
         self.end_time = None
+        self.cumulative_root_intermediate_ca = 0
+        self.root_ca_with_no_skid = None
+        self.root_ca_not_valid = None
+        self.root_ca_count = None
 
     def init_logging_read_file(self):
         self.logger = logging.getLogger("PcapAnalyzer")
@@ -82,7 +85,7 @@ class PcapAnalyzer(object):
         # Read certificates in, maybe give a root ca folder in params or
         # load it from the website into the current working directory
         sub = GetRootCAs(self.ca_folder)
-        sub.get_roots(self.cert_mgr)
+        self.root_ca_count, self.root_ca_with_no_skid, self.root_ca_not_valid = sub.get_roots(self.cert_mgr)
 
         # Instantiate a Parser
         self.parser = Parser.Parser(self.cert_mgr, self.usedCipherSuites)
@@ -159,6 +162,7 @@ class PcapAnalyzer(object):
         for _tree in self.cert_mgr:
             if len(_tree.all_nodes()) > 1:
                 self.count_used_root_cas += 1
+                self.cumulative_root_intermediate_ca += len(_tree.all_nodes())
                 subj = _tree.get_node(_tree.root).data.subject
                 cn = None
                 ou = None
@@ -185,7 +189,7 @@ class PcapAnalyzer(object):
                         countries.append((_tree.get_node(_tree.root).data.subject.get_attributes_for_oid(
                             x509.NameOID.COUNTRY_NAME)[0].value,))
                     except Exception as ex:
-                        self.logger.debug("Subject has no country listed.".format(str(ex)))
+                        self.logger.info("Subject has no country listed.".format(str(ex)))
 
                     cumulative_time_ca.append(_tree.get_node(_tree.root).first_seen)
                 except Exception as e:
@@ -265,6 +269,7 @@ class PcapAnalyzer(object):
             ax4.set_ylabel('cumulative count CA certs')
 
         # self.produce_svg()
+        self.print_statistics()
         plt.show()
 
     def print_statistics(self):
@@ -275,7 +280,11 @@ class PcapAnalyzer(object):
         self.logger.info("Count Certificate Messages:       {}".format(self.parser.count_certificate_messages))
         # self.logger.info("Count Cert match Cert             {}".format(self.parser.count_cert_chains_added))
         # self.logger.info("Count No Cert found               {}".format(self.parser.count_no_certificate_found))
-        self.logger.info("Count Certificate Parsing errors  {}".format(self.parser.count_parsing_errors))
+        self.logger.info("Count Certificate Parsing errors: {}".format(self.parser.count_parsing_errors))
+        self.logger.info("Loaded Root CA certificates       {}".format(self.root_ca_count))
+        self.logger.info("Count Root CA with no SKID:       {}".format(self.root_ca_with_no_skid))
+        self.logger.info("Count Root CA not valid cert:     {}".format(self.root_ca_not_valid))
+        self.logger.info("Count Root and Intermediate CA    {}".format(self.cumulative_root_intermediate_ca))
         self.logger.info("*" * 20 + " Statistics " + "*" * 20)
 
         unique_trees = dict()
@@ -322,6 +331,9 @@ def parse_arguments():
             # PcapAnalyzer #
             ################
             Captures, parses and shows TLS Handshake packets and analyze the Certificate Chains
+            Out of the certificate chains the PcapAnalyzer create some interesting graphics that shows
+            the used root and intermediate certificates, the used cipher suites and a cumulative line
+            when the certificates first seen in a plot from matplotlib.
             '''
         ))
     group = parser.add_mutually_exclusive_group(required=True)
@@ -331,9 +343,6 @@ def parse_arguments():
                         help='the interface to listen on')
     group.add_argument('-f', '--file', metavar='FILE', action='store',
                         help='read from file (don\'t capture live packets)')
-    # not needed because of the debug log file
-    # parser.add_argument('-d', '--debug', action='store_true',
-    #                     help='increase output verbosity')
     parser.add_argument('-c', '--ca_folder', action='store', metavar='DIRECTORY',
                         help='the folder where the root CA certificates stored. Provide the full path!')
     return parser.parse_args()
@@ -345,7 +354,7 @@ def main():
     analyzer = PcapAnalyzer(args)
     analyzer.run()
 
-    analyzer.print_statistics()
+    # analyzer.print_statistics()
     analyzer.plot_statistics()
     analyzer.produce_svg()
 

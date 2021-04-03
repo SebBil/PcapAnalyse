@@ -21,6 +21,9 @@ class GetRootCAs(object):
     def __init__(self, folder):
         self.logger = logging.getLogger("PcapAnalyzer." + __name__)
         self.root_ca_folder = folder
+        self.no_skid = 0
+        self.not_valid = 0
+        self.count = 0
         self.root_ca_download_url = r'https://ccadb-public.secure.force.com/microsoft/IncludedCACertificateReportForMSFT'
 
     def get_roots(self, cert_mgr):
@@ -34,6 +37,8 @@ class GetRootCAs(object):
             self._load_root_cas(ca_folder_path, cert_mgr)
         else:
             self._load_root_cas(self.root_ca_folder, cert_mgr)
+
+        return self.count, self.no_skid, self.not_valid
 
     def _get_all_roots_from_web(self):
         """
@@ -56,14 +61,15 @@ class GetRootCAs(object):
         if not os.path.exists(ca_folder_path):
             os.makedirs(ca_folder_path)
         if os.listdir(ca_folder_path):
-            self.logger.info("Directory: %s is not emtpy. %s files" % (ca_folder_path, len(os.listdir(ca_folder_path))))
+            self.logger.info("[*] Directory: %s is not emtpy. %s files" % (ca_folder_path, len(os.listdir(ca_folder_path))))
+
             remove = 'z'
             while remove not in ['y', 'n']:
                 remove = input("Should it cleared now to update all certificates? [y/n]: ")
                 if 'y' == remove:
                     for f in os.listdir(ca_folder_path):
                         os.remove(os.path.join(ca_folder_path, f))
-                    self.logger.info("Removed all file in Directory: %s" % ca_folder_path)
+                    self.logger.info("[*] Removed all file in Directory: %s" % ca_folder_path)
                 if 'n' == remove:
                     pass
         links_len = len(links)
@@ -78,11 +84,17 @@ class GetRootCAs(object):
             count += 1
 
     def _load_root_cas(self, path, cert_mgr):
+        """
+        Load all root certificates from the the given folder and save them into the RootCATree structure
+        :param path:
+        :param cert_mgr:
+        :return:
+        """
         system = os.walk(path, topdown=True)
-        count = 0
-        self.logger.info("Start reading Certificates from {}".format(path))
+
+        self.logger.info("[*] Start reading Certificates from {}".format(path))
         for root, dir, files in system:
-            self.logger.info("Try to read Certificates from %s" % root)
+            self.logger.info("[*] Try to load Certificates from folder: {}".format(root))
             for file in files:
                 file_path = os.path.join(root, file)
                 try:
@@ -95,35 +107,41 @@ class GetRootCAs(object):
 
                     # append only if the cert is valid and not disabled
                     in_time = self._time_in_range(cert.not_valid_before, cert.not_valid_after, datetime.datetime.now())
-
+                    self.logger.info("[+] Certificate {} loaded".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode()))
                     try:
+                        self.logger.info("[*] Check certificates authority key identifier and subject key identifier")
                         # check if the ca has the subject key identifier which is mandatory for a ca certificate
                         skid = cert.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_KEY_IDENTIFIER).value.digest
                         akid = cert.extensions.get_extension_for_oid(x509.ExtensionOID.AUTHORITY_KEY_IDENTIFIER).value.key_identifier
 
                         if skid != akid:
-                            self.logger.error("SKID and AKID doesn't match!! Something bad happens to this cert")
-                            self.logger.error("Check certificate: {}".format(cert.subject.rfc4514_string()))
+                            self.logger.error("[!] SKID and AKID doesn't match!! Something bad happens to this cert")
+                            self.logger.error("[!] Check certificate: {}".format(cert.subject.rfc4514_string()))
                             input("Enter for continue...")
 
                     except Exception as ex:
                         if 'authorityKeyIdentifier' in str(ex):
-                            self.logger.debug("Certificate '{}' No Authority Identifier found".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode(), str(ex)))
+                            self.logger.info("[-] Certificate '{}' No Authority Identifier found".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode(), str(ex)))
                             pass
                         elif 'subjectKeyIdentifier' in str(ex):
-                            self.logger.error("Certificate '{}' No Subject Identifier found. CA Cert must have a this".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode()))
+                            self.no_skid += 1
+                            self.logger.error("[-] Certificate '{}' No Subject Identifier found. CA Cert must have a this".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode()))
+                            # input("The certificate subject: {}\nThis certificate will not included!\nPress key to continue...".format(cert.subject.rfc4514_string()))
                             continue
-
+                    self.logger.info("[+] Subject key identifier exist")
+                    self.logger.info("[*] Check certificate validity")
                     if in_time:
                         cert_mgr.append(_tree)
-                        count += 1
-                        self.logger.info("Successfully {} load {} of {} Certificates".format(cert.subject.rfc4514_string(), count, len(files)))
+                        self.count += 1
+                        self.logger.info("[+] Certificate is valid")
+                        self.logger.info("[+] Successfully {} load {} of {} Certificates".format(cert.subject.rfc4514_string(), self.count, len(files)))
                     else:
-                        self.logger.info("Certificate '{}' is no valid anymore".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode()))
-                        self.logger.debug("Not valid before: {}".format(cert.not_valid_before))
-                        self.logger.debug("Current GMT Time: {}".format(
+                        self.not_valid += 1
+                        self.logger.info("[-] Certificate '{}' is no valid anymore".format(binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode()))
+                        self.logger.info("[*] Not valid before: {}".format(cert.not_valid_before))
+                        self.logger.info("[*] Not valid after:  {}".format(cert.not_valid_after))
+                        self.logger.info("[*] Current GMT Time: {}".format(
                             datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
-                        self.logger.debug("Not valid after:  {}".format(cert.not_valid_after))
                 except Exception as e:
                     self.logger.warning(str(e))
 

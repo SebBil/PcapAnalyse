@@ -73,7 +73,7 @@ class PcapAnalyzer {
     + interface : String
     + file : String
     + list_interfaces : Bool
-    + debug : Bool
+    + info : Bool
     + ca_folder : String
     + captured_packets : Int
     + usedCipherSuites : List

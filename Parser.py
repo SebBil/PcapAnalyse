@@ -90,11 +90,11 @@ class Parser(object):
                     break
             else:
                 if not msgs:
-                    self.logger.debug("Found no message")
+                    self.logger.info("Found no message")
                     raise SSL3Exception('Bad TLS version in buf: %r' % buf[i:i + 5])
                 else:
-                    self.logger.debug("Found messages, but rest of packet can not be used... discard {} bytes".format(n - i))
-                    self.logger.debug("Bytes discarded: {}".format(binascii.hexlify(buf[i:])))
+                    self.logger.info("Found messages, but rest of packet can not be used... discard {} bytes".format(n - i))
+                    self.logger.info("Bytes discarded: {}".format(binascii.hexlify(buf[i:])))
                     break
             i += len(msg)
         return msgs, i
@@ -119,9 +119,9 @@ class Parser(object):
             if record.type == 22:
                 self.parse_tls_handshake(ip, record.data, record.length, ts)
             if record.type == 21:
-                self.logger.info('[+] TLS Alert message in connection: {0}'.format(connection))
+                self.logger.debug('[+] TLS Alert message in connection: {0}'.format(connection))
             if record.type == 20:
-                self.logger.info('[+] Change cipher - encrypted messages from now on for {0}'.format(connection))
+                self.logger.debug('[+] Change cipher - encrypted messages from now on for {0}'.format(connection))
                 self.encrypted_streams.append(connection)
             sys.stdout.flush()
 
@@ -152,7 +152,7 @@ class Parser(object):
                                               ip.data.dport)
 
         if connection in self.encrypted_streams:
-            self.logger.info('[+] Encrypted handshake message between {0}'.format(connection))
+            self.logger.debug('[+] Encrypted handshake message between {0}'.format(connection))
             return
         else:
             total_len_consumed = 0
@@ -161,7 +161,7 @@ class Parser(object):
                 try:
                     handshake_type = ord(payload[:1])
                     if handshake_type == 4:
-                        self.logger.debug('[#] New Session Ticket is not implemented yet')
+                        self.logger.debug('[*] New Session Ticket is not implemented yet')
                         return
                     elif handshake_type == 22:
                         jump_bytes = payload[1:4]
@@ -180,27 +180,27 @@ class Parser(object):
                 self.count_handshake_messages += 1
 
                 if handshake.type == 0:
-                    self.logger.info('[+] Hello Request {0} <- {1}'.format(client, server))
+                    self.logger.info('[*] Hello Request {0} <- {1}'.format(client, server))
                 if handshake.type == 1:
-                    self.logger.info('[+] ClientHello {0} -> {1}'.format(client, server))
+                    self.logger.info('[*] ClientHello {0} -> {1}'.format(client, server))
                 if handshake.type == 2:
-                    self.logger.info('[+] ServerHello {1} <- {0}'.format(client, server))
+                    self.logger.info('[*] ServerHello {1} <- {0}'.format(client, server))
                     self.parse_server_hello(handshake.data)
                 if handshake.type == 11:
-                    self.logger.info('[+] Certificate {0} <- {1}'.format(client, server))
+                    self.logger.info('[*] Certificate {0} <- {1}'.format(client, server))
                     self.parse_server_certificate(handshake.data, client, server, ts)
                 if handshake.type == 12:
-                    self.logger.info('[+] ServerKeyExchange {1} <- {0}'.format(server, client))
+                    self.logger.info('[*] ServerKeyExchange {1} <- {0}'.format(server, client))
                 if handshake.type == 13:
-                    self.logger.info('[+] CertificateRequest {1} <- {0}'.format(client, server))
+                    self.logger.info('[*] CertificateRequest {1} <- {0}'.format(client, server))
                 if handshake.type == 14:
-                    self.logger.info('[+] ServerHelloDone {1} <- {0}'.format(client, server))
+                    self.logger.info('[*] ServerHelloDone {1} <- {0}'.format(client, server))
                 if handshake.type == 15:
-                    self.logger.info('[+] CertificateVerify {0} -> {1}'.format(client, server))
+                    self.logger.info('[*] CertificateVerify {0} -> {1}'.format(client, server))
                 if handshake.type == 16:
-                    self.logger.info('[+] ClientKeyExchange {0} -> {1}'.format(client, server))
+                    self.logger.info('[*] ClientKeyExchange {0} -> {1}'.format(client, server))
                 if handshake.type == 20:
-                    self.logger.info('[+] Finished {0} -> {1}'.format(client, server))
+                    self.logger.info('[*] Finished {0} -> {1}'.format(client, server))
 
     def parse_server_hello(self, handshake):
         """
@@ -208,12 +208,11 @@ class Parser(object):
         """
         payload = handshake.data
         session_id, payload = self.unpacker('p', payload)
-        # self.logger.debug('[*]   Session ID: {}'.format(session_id))
         cipher_suite, payload = self.unpacker('H', payload)
         cipher_name = Constants.CIPHER_SUITES.get(cipher_suite)
         if cipher_name is None:
             self.logger.error("Cipher Suite is missing: {}".format(cipher_suite))
-        self.logger.debug('[*]   Used Cipher: {} - {}'.format(hex(cipher_suite), cipher_name))
+        self.logger.info('[*]   Used Cipher: {} - {}'.format(hex(cipher_suite), cipher_name))
         self.used_cipher_suites.append((cipher_name, ))
 
     def parse_server_certificate(self, tls_cert_msg, client, server, ts):
@@ -238,27 +237,30 @@ class Parser(object):
                 self.logger.warning("[-] Skip this certificate chain...")
                 return
             try:
-                _tree.create_node(tag=cert.subject.rfc4514_string(),
-                                  identifier=binascii.hexlify(cert.fingerprint(hashes.SHA256())),
-                                  data=cert,
-                                  parent=pre)
-                pre = binascii.hexlify(cert.fingerprint(hashes.SHA256()))
+                if cert.extensions.get_extension_for_oid(x509.ExtensionOID.BASIC_CONSTRAINTS).value.ca:
+                    _tree.create_node(tag=cert.subject.rfc4514_string(),
+                                      identifier=binascii.hexlify(cert.fingerprint(hashes.SHA256())),
+                                      data=cert,
+                                      parent=pre)
+                    pre = binascii.hexlify(cert.fingerprint(hashes.SHA256()))
             except exceptions.DuplicatedNodeIdError:
-                self.logger.debug("[*] Node already exists: {}".format(cert.fingerprint(hashes.SHA256())))
+                self.logger.info("[*] Node already exists: {}".format(cert.fingerprint(hashes.SHA256())))
                 pass
             except Exception as ex:
-                self.logger.warning("[-] Adding cert node to tree failed.")
-                self.logger.warning("[-] Error: {}".format(ex))
-                self.logger.warning("[-] Error occurred on connection: {}".format(connection_key))
-                self.logger.warning("[-] Skip this certificate chain...")
-                return
+                if 'basicConstraints' in str(ex):
+                    pass
+                else:
+                    self.logger.warning("[-] Error: {}".format(ex))
+                    self.logger.warning("[-] Error occurred on connection: {}".format(connection_key))
+                    self.logger.warning("[-] Skip this certificate chain...")
+                    return
 
         self.logger.info("[*] Try to find parent for each node in all root ca trees...")
         for node in _tree.all_nodes():
-            self.logger.debug("[*] Try to find parent for node: {}".format(node.tag))
+            self.logger.info("[*] Try to find parent for node: {}".format(node.tag))
             found = False
             try:
-                akid = node.data.extensions.get_extension_for_oid(x509.oid.ExtensionOID.AUTHORITY_KEY_IDENTIFIER).value.key_identifier
+                akid = node.data.extensions.get_extension_for_oid(x509.ExtensionOID.AUTHORITY_KEY_IDENTIFIER).value.key_identifier
                 for ca_tree in self.root_ca_tree_list:
                     found = ca_tree.search_nodes(node, ts)
                     if found:

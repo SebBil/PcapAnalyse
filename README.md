@@ -42,13 +42,13 @@ __Ergebnisse:__
 ### Usage
 Simple analysis of a pcap file
 ```bash
-python3 PcapAnalyse.py -f example.pcap
+python3 PcapAnalyzer.py -f example.pcap
 ```
 List all possible interfaces for sniffing
 ```bash
-python3 PcapAnalyse.py --list-interfaces
+python3 PcapAnalyzer.py --list-interfaces
 ```
 
 ### TODO
-* Logging the debug log in a file for a better overview in the stdout
+* Logging the info log in a file for a better overview in the stdout
 * first seen of the certificates and the plot belongs to it

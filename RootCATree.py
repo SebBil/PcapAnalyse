@@ -1,8 +1,6 @@
 import codecs
 import logging
 
-import treelib
-
 try:
     from StringIO import StringIO
 except ImportError:
@@ -28,7 +26,7 @@ class RootCATree(Tree):
             search_sid = search.data.extensions.get_extension_for_oid(x509.oid.ExtensionOID.SUBJECT_KEY_IDENTIFIER).value.digest
             if cur_root_ca_sid == search_sid:
                 self.logger.info("[+] Identical root found: {}".format(root.tag))
-                self.logger.debug("[*] Adding frequency and timestamp if not seen before")
+                self.logger.info("[*] Adding frequency and timestamp if not seen before")
                 if root.frequency == 0:
                     root.first_seen = ts
                 root.frequency += 1
@@ -49,7 +47,7 @@ class RootCATree(Tree):
         if parent_node.frequency == 0:
             parent_node.first_seen = ts
         parent_node.frequency += 1
-        self.logger.info("Try to insert child")
+        self.logger.info("[*] Try to insert child")
         try:
             self.add_node(node=add_node, parent=parent_node.identifier)
             self.logger.info("[+] Successfully added node: {}".format(add_node.tag))
